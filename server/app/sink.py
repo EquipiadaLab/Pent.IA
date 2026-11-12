@@ -60,7 +60,23 @@ class Coordinator:
         self._stop: dict[str, asyncio.Event] = {}
         self._pending: dict[tuple[str, int], asyncio.Future[Approval]] = {}
         self._actors: dict[tuple[str, int], str] = {}
+        self._signals: dict[str, asyncio.Event] = {}
         self._lock = asyncio.Lock()
+
+    # ---- aviso de evento novo (WebSocket) -------------------------------
+    def signal(self, campaign_id: str) -> asyncio.Event:
+        """Sinal ATUAL da campanha. Pegue-o ANTES de ler o banco e espere
+        nele: ``notify`` o dispara quando um evento novo e gravado."""
+        ev = self._signals.get(campaign_id)
+        if ev is None:
+            ev = asyncio.Event()
+            self._signals[campaign_id] = ev
+        return ev
+
+    def notify(self, campaign_id: str) -> None:
+        old = self._signals.pop(campaign_id, None)
+        if old is not None:
+            old.set()
 
     # ---- parada de emergencia -------------------------------------------
     def _stop_event(self, campaign_id: str) -> asyncio.Event:
@@ -85,6 +101,7 @@ class Coordinator:
             )
         )
         await self.db.set_state(campaign_id, CampaignState.STOPPED, finished=True)
+        self.notify(campaign_id)
         # Libera quem estiver aguardando aprovacao: parada vence tudo.
         async with self._lock:
             for (cid, move_no), fut in list(self._pending.items()):
@@ -175,6 +192,7 @@ class SQLiteEventSink(EventSink):
             await self._db.upsert_move(self.campaign_id, event.move)
 
         await self._apply_state(event)
+        self._co.notify(self.campaign_id)  # acorda quem esta no WebSocket
 
     async def audit(self, entry: AuditEntry) -> None:
         if entry.campaign_id != self.campaign_id:

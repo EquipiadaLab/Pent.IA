@@ -39,8 +39,12 @@ npx openapi-typescript http://127.0.0.1:8000/openapi.json -o src/api/schema.d.ts
 | 9 | POST | `/campaigns/{id}/stop` | Botão **Parada de emergência** | 200 `Campaign` |
 | 10 | GET | `/campaigns/{id}/report` | Tela **Game Review** (inclui auditoria) | 200 `GameReview` |
 | 11 | GET | `/campaigns/{id}/report/export?format=md` | Botão **Baixar relatório** | 200 `text/markdown` |
+| 12 | **WS** | `/campaigns/{id}/ws?since=N` | **Ao vivo por WebSocket** (recomendado) | stream de `Event` |
 
 Não há endpoint separado de auditoria: ela vem em `GET /report` → `audit`.
+
+O WebSocket (#12) **não aparece no `/docs` nem no `openapi.json`** (o FastAPI não documenta
+WebSockets no OpenAPI). A referência dele é a seção 3A deste guia.
 
 ### Erros
 Sempre `{"detail": "mensagem"}` (padrão FastAPI). Mostre a mensagem como texto.
@@ -160,7 +164,67 @@ Baixa um arquivo `.md` (`Content-Disposition: attachment`). Use um link/`fetch` 
 
 ---
 
-## 3. Fluxo ao vivo (polling)
+## 3A. Ao vivo por WebSocket (recomendado)
+
+`ws://127.0.0.1:8000/campaigns/{id}/ws?since=N`
+
+- Cada mensagem é **um `Event`, com o mesmo JSON do polling** (seção 3.1). O `handle(ev)` é o mesmo.
+- Ao conectar, o servidor manda os eventos com `seq > since` que você ainda não tem e depois
+  **empurra cada evento novo na hora**.
+- Depois de `campaign_finished`, o servidor **fecha** a conexão (código `1000`).
+- O socket é **só de leitura**: aprovar, negar e parar continuam pelos `POST` (seções 2.5 e 2.6).
+  Mensagens enviadas pelo front são ignoradas.
+- A origem da página precisa estar em `CORS_ORIGINS` (padrão: `http://localhost:5173` e
+  `http://127.0.0.1:5173`). Outra origem é recusada no handshake.
+
+### Códigos de fechamento (`event.code` no `onclose`)
+| Código | Significado | O que fazer |
+|---|---|---|
+| `1000` | Partida terminou | Mostrar "Ver relatório". Não reconectar |
+| `1006` | Conexão caiu (rede, servidor reiniciou) | Reconectar com `since` = último `seq` |
+| `1008` | Origem não autorizada | Erro de configuração (porta do Vite / `CORS_ORIGINS`) |
+| `1013` | Servidor cheio | Usar o polling (seção 3) |
+| `4404` | Campanha não existe | Mostrar "Partida não encontrada" |
+
+### Exemplo (React/TS) com reconexão e plano B por polling
+```ts
+const WS_URL = import.meta.env.VITE_API_URL.replace(/^http/, "ws");
+
+export function watchCampaign(id: string, handle: (ev: Event) => void, onEnd: () => void) {
+  let since = 0;
+  let tries = 0;
+  let closedByUs = false;
+  let socket: WebSocket | null = null;
+
+  const connect = () => {
+    socket = new WebSocket(`${WS_URL}/campaigns/${id}/ws?since=${since}`);
+    socket.onmessage = (msg) => {
+      const ev: Event = JSON.parse(msg.data);   // JSON.parse, nunca innerHTML
+      if (ev.seq <= since) return;              // idempotente
+      since = ev.seq;
+      tries = 0;
+      handle(ev);
+    };
+    socket.onclose = (e) => {
+      if (closedByUs || e.code === 1000) return onEnd();
+      if (e.code === 4404 || e.code === 1008) return onEnd();   // mostrar erro
+      if (++tries <= 5) setTimeout(connect, 1000 * tries);      // reconecta e retoma
+      else startPolling(id, since, handle, onEnd);              // plano B: seção 3
+    };
+  };
+  connect();
+  return () => { closedByUs = true; socket?.close(); };         // chamar no unmount
+}
+```
+
+Dicas:
+- Abra o socket **logo depois** do `POST /campaigns` (ou ao abrir uma partida existente).
+- Ao clicar em Aprovar/Negar/Parar, **não** atualize o card "na mão": o evento correspondente
+  chega pelo socket em milissegundos.
+- Vários lances podem chegar quase juntos. Para efeito de "partida sendo jogada", enfileire e
+  mostre um por um com ~300 ms de intervalo.
+
+## 3. Fluxo ao vivo (polling — plano B)
 
 ```ts
 let since = 0;
@@ -350,7 +414,7 @@ Guarde o histórico de `eval_bar` de cada `score_updated` para um **gráfico de 
 4. **Não logar respostas inteiras** no console; sem analytics de terceiros nas telas de evidência.
 5. **Não enviar** `allowed_methods`, `allowed_profiles` ou limites de taxa no `POST /campaigns`.
 6. **CSP** no `index.html`:
-   `default-src 'self'; connect-src 'self' http://127.0.0.1:8000; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'`
+   `default-src 'self'; connect-src 'self' http://127.0.0.1:8000 ws://127.0.0.1:8000; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'`
 
 ---
 
@@ -360,7 +424,7 @@ Guarde o histórico de `eval_bar` de cada `score_updated` para um **gráfico de 
 |---|---|
 | Primeira chamada do `/report` demora ~20–30 s (IA) | Mostrar "Analisando a partida..." |
 | Sem credenciais da AWS no servidor, `/health` mostra `llm: template` e `ai_explanation` fica `null` | Mostrar só `explanation` |
-| CORS liberado só para `http://localhost:5173` e `http://127.0.0.1:5173` | Rodar o Vite nessas portas, ou o backend ajusta `CORS_ORIGINS` no `.env` |
+| CORS **e WebSocket** liberados só para `http://localhost:5173` e `http://127.0.0.1:5173` | Rodar o Vite nessas portas, ou o backend ajusta `CORS_ORIGINS` no `.env` |
 | API sem autenticação | Só para o hackathon, rodando local |
 
 **Resolvido** (não precisa mais de contorno): eventos de aprovação duplicados, 409 ao aprovar cedo,

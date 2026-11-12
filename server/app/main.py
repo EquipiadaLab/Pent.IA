@@ -7,15 +7,15 @@ senao o fake de exemplo) e expoe as rotas. CORS liberado para o frontend.
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import router
+from app.api.ws import router as ws_router
 from app.api.context import AppContext
-from app.config import load_settings
+from app.config import cors_origins, load_settings
 from app.db import Database
 from app.interfaces import CampaignRunner
 from app.reporter import ReportBuilder, build_llm_client
@@ -67,19 +67,11 @@ async def lifespan(app: FastAPI):
         await ctx.shutdown()
 
 
-_DEFAULT_CORS = "http://localhost:5173,http://127.0.0.1:5173"
-
-
-def _cors_origins() -> list[str]:
-    raw = os.getenv("CORS_ORIGINS", _DEFAULT_CORS)
-    return [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
-
-
 def create_app() -> FastAPI:
     app = FastAPI(title="Pentest Chess — Plataforma", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_cors_origins(),  # so a tela (Vite); ajuste CORS_ORIGINS no .env
+        allow_origins=cors_origins(),  # so a tela (Vite); ajuste CORS_ORIGINS no .env
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type"],
     )
@@ -93,6 +85,7 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(router)
+    app.include_router(ws_router)
 
     @app.get("/health")
     async def health() -> dict[str, object]:

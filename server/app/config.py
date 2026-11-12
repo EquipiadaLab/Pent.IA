@@ -64,3 +64,12 @@ def load_settings() -> Settings:
         aws_region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1",
         bedrock_model_id=None if disabled else model_id,
     )
+
+
+DEFAULT_CORS = "http://localhost:5173,http://127.0.0.1:5173"
+
+
+def cors_origins() -> list[str]:
+    """Origens da tela autorizadas (HTTP via CORS e WebSocket via checagem manual)."""
+    raw = os.getenv("CORS_ORIGINS", DEFAULT_CORS)
+    return [o.strip().rstrip("/") for o in raw.split(",") if o.strip() and o.strip() != "*"]
