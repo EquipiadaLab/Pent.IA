@@ -6,7 +6,7 @@
 |---|---|---|
 | **A — Motor** | backend-d | `app/engine/**` (scope, executor, planner, checks, evaluator, runner) |
 | **B — Plataforma** | amigo | `app/api/`, `app/db.py`, `app/sink.py`, `app/audit.py`, `app/reporter/`, `app/report.py`, `app/main.py`, `requirements.txt` |
-| **Compartilhado** | PR avisado | `app/models.py`, `app/interfaces.py` |
+| **Compartilhado** | PR avisado | `app/models.py`, `app/interfaces.py`, `app/public_schemas.py`, `app/redact.py`, `docs/API.md` |
 
 ## Regras
 
@@ -31,3 +31,7 @@ cd server
 pip install -r requirements.txt
 python -m pytest
 ```
+
+## API publica e seguranca
+
+Ver [docs/API.md](docs/API.md). O front so recebe `Public*` (`app/public_schemas.py`); segredos sao mascarados por `app/redact.py` antes de gravar e antes de sair.
