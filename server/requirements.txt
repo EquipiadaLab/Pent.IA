@@ -1,5 +1,6 @@
 fastapi
-uvicorn[standard]
+uvicorn
+websockets
 pydantic>=2
 httpx
 boto3

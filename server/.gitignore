@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+reports/
+*.db-shm
+*.db-wal
+*.db-journal

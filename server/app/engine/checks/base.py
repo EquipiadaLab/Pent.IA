@@ -41,18 +41,25 @@ class CheckSpec:
     owasp: str
     fn: CheckFn
     needs_approval: bool = False
+    hypothesis: str = ""  # hipotese padrao (reserva se a IA nao planejar)
+    expected: str = ""  # resultado esperado de um site seguro
+    impact: str = ""  # impacto se o problema existir
 
 
 class CheckContext:
     """Estado compartilhado de UMA campanha para os checks."""
 
-    def __init__(self, config: CampaignConfig, fetcher: Fetcher, guard: ScopeGuard) -> None:
+    def __init__(self, config: CampaignConfig, fetcher: Fetcher, guard: ScopeGuard,
+                 *, replay: bool = False) -> None:
         self.config = config
         self.fetcher = fetcher
         self.guard = guard
         self.origin = config.origin.rstrip("/")
         self.move_no = 0
-        self._ev = 0
+        # replay = segunda observacao para confirmar um achado: requisicoes novas,
+        # evidencias proprias (ev-N-101, ev-N-102...) e sem reaproveitar cache.
+        self.replay = replay
+        self._ev = 100 if replay else 0
         self._base: FetchResult | None = None
 
     # -- evidencias --------------------------------------------------------
@@ -75,7 +82,9 @@ class CheckContext:
         """GET / uma unica vez; segue redirects SO dentro da mesma origem (max 3)."""
         if self._base is not None:
             return self._base
-        self.move_no, saved = 0, self.move_no  # evidencia compartilhada: ev-0-*
+        saved = self.move_no
+        if not self.replay:
+            self.move_no = 0  # evidencia compartilhada entre lances: ev-0-*
         url = self.origin + "/"
         result = await self.fetcher.request("GET", url, profile=Profile.PASSIVE, ev_id=self.next_ev_id())
         for _ in range(MAX_HOPS):
@@ -91,6 +100,10 @@ class CheckContext:
         self.move_no = saved
         self._base = result
         return result
+
+    @property
+    def base_response(self) -> httpx.Response | None:
+        return self._base.response if self._base is not None else None
 
     @property
     def base_failed(self) -> bool:
