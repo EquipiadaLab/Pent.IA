@@ -193,6 +193,15 @@ class Move(BaseModel):
     recommendation: str | None = None  # "melhor lance": a correcao
 
     plan: MovePlan | None = None  # hipotese/acao/resultado esperado/parada (antes de executar)
+    # Proveniencia da recomendacao multiagente. O executor ainda usa somente
+    # ``test_id`` do catalogo fechado; estes campos existem para auditoria,
+    # tela e relatorio e sao opcionais para manter os lances antigos compativeis.
+    recommended_by: str | None = None
+    attack_tactic_id: str | None = None
+    attack_tactic_name: str | None = None
+    attack_technique_id: str | None = None
+    attack_technique_name: str | None = None
+    attack_url: str | None = None
     verdict: Verdict | None = None  # so para achados (warning/fail): confirmado/descartado/inconclusivo
     impact: str | None = None  # impacto se o problema for explorado
     reproduce: list[str] = Field(default_factory=list)  # passos de reproducao (comandos curl)

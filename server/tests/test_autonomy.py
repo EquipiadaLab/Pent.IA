@@ -70,9 +70,12 @@ def test_ai_decides_order_and_plan_is_recorded_before_execution(lab):
 
     sink = MemorySink(approve=True)
     c = run(lab, sink, llm=ScriptedLLM([choose_last] * 14))
-    assert [m.test_id for m in c.moves][0] == "ERR-001"  # IA mudou a ordem
+    assert [m.test_id for m in c.moves][0] == "TLS-001"  # Pent/Recon prioriza a abertura
+    assert c.moves[0].recommended_by == "Recon"
+    assert c.moves[0].attack_tactic_id == "TA0043"
     assert len(c.moves) == 14  # cobertura garantida: todos jogados
-    assert all(m.plan and m.plan.source == "ai" and m.plan.hypothesis for m in c.moves)
+    assert all(m.plan and m.plan.hypothesis for m in c.moves)
+    assert any(m.plan.source == "ai" for m in c.moves[1:])  # IA ainda ordena os checks sem agente
     planned = [e for e in sink.events if e.type is EventType.MOVE_PLANNED]
     assert all(e.move.plan is not None and e.move.status is None for e in planned)  # plano ANTES do resultado
 
@@ -149,27 +152,21 @@ class NoHumanSink(MemorySink):
         raise AssertionError("execucao automatica nao pode esperar humano")
 
 
-def test_unattended_uses_only_server_preapproval(lab, monkeypatch):
-    monkeypatch.setenv("PREAPPROVED_TESTS", "FILE-001")
-    monkeypatch.setenv("PREAPPROVED_BY", "Maria (CISO)")
-    monkeypatch.setenv("PREAPPROVED_UNTIL", (datetime.now(UTC) + timedelta(days=5)).date().isoformat())
-    sink = NoHumanSink()
+def test_unattended_still_requires_human_approval(lab):
+    """A flag unattended nao pode contornar a aprovacao por lance."""
+    sink = MemorySink(approve=True)
     c = run(lab, sink, unattended=True)
-    by = {m.test_id: m for m in c.moves}
-    assert by["FILE-001"].approval is Approval.APPROVED and by["FILE-001"].grade is Grade.BLUNDER
-    assert by["FILE-002"].approval is Approval.DENIED and by["FILE-002"].status is None
-    resolved = [e for e in sink.events if e.type is EventType.APPROVAL_RESOLVED]
-    assert any("Maria (CISO)" in e.data["actor"] for e in resolved)
+    assert all(m.approval is Approval.APPROVED for m in c.moves)
+    requested = [e for e in sink.events if e.type is EventType.APPROVAL_REQUESTED]
+    assert len(requested) == len(c.moves)
     assert c.state is CampaignState.FINISHED
 
 
-def test_unattended_expired_policy_denies(lab, monkeypatch):
-    monkeypatch.setenv("PREAPPROVED_TESTS", "FILE-001,FILE-002,ERR-001")
-    monkeypatch.setenv("PREAPPROVED_BY", "Maria")
-    monkeypatch.setenv("PREAPPROVED_UNTIL", "2020-01-01")
-    c = run(lab, NoHumanSink(), unattended=True)
-    assert all(m.approval is Approval.DENIED for m in c.moves if m.profile is Profile.ACTIVE_LIGHT
-               and m.test_id.startswith(("FILE", "ERR")))
+def test_unattended_without_human_decision_executes_nothing(lab):
+    """Negar os lances, mesmo com unattended=True, resulta em zero execucao."""
+    c = run(lab, MemorySink(approve=False), unattended=True)
+    assert c.moves
+    assert all(m.approval is Approval.DENIED and m.status is None for m in c.moves)
 
 
 # ------------------------------------------------------------- juiz e resumo JSON
