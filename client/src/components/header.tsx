@@ -1,17 +1,14 @@
-import { Play, RefreshCcw, Settings2, Square } from "lucide-react";
+import { Play, RefreshCcw } from "lucide-react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "./ui/breadcrumb";
 
-import { useAgentStore } from "@/stores/agent.store";
 import { useUrlStore } from "@/stores/url.store";
 import { Button } from "./ui/button";
 
 export default function AppHeader() {
     const pageName = useUrlStore((state) => state.pageName);
-    const agentIsRunning = useAgentStore((state) => state.isRunning);
-    const setIsRunning = useAgentStore((s) => s.setIsRunning);
 
     return (
-        <header className="shrink-0 w-full border-b border-accent h-24 flex items-center justify-between">
+        <header className="flex h-16 w-full shrink-0 items-center justify-between border-b border-white/[0.07]">
             <div className="flex items-center gap-2 px-4">
                 <Breadcrumb>
                     <BreadcrumbList>
@@ -29,10 +26,33 @@ export default function AppHeader() {
                     </BreadcrumbList>
                 </Breadcrumb>
             </div>
-            <div className="flex gap-2">
-                <Button variant="outline" size="icon-lg"><RefreshCcw /></Button>
-                <Button variant="outline" size="icon-lg"><Settings2 /></Button>
-                <Button className={!agentIsRunning ? "bg-green-800/50 hover:bg-green-800/70" : ""} onClick={() => setIsRunning(!agentIsRunning)} variant={agentIsRunning ? "destructive" : "default"} size="lg">{agentIsRunning ? <><Square /> Parar agente</> : <><Play /> Iniciar agente</>}</Button>
+            <div className="flex gap-2 pr-1">
+                <Button
+                    variant="outline"
+                    size="icon-sm"
+                    aria-label="Atualizar campanhas"
+                    className="border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/10 hover:text-white"
+                    onClick={() => window.dispatchEvent(new Event("campaign:refresh"))}
+                >
+                    <RefreshCcw />
+                </Button>
+                <Button
+                    size="sm"
+                    className="bg-rose-600 text-white hover:bg-rose-500"
+                    onClick={() => {
+                        window.dispatchEvent(new Event("campaign:create"));
+                        window.setTimeout(
+                            () =>
+                                document
+                                    .getElementById("campaign-create")
+                                    ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+                            0,
+                        );
+                    }}
+                >
+                    <Play />
+                    Nova campanha
+                </Button>
             </div>
         </header>
     );

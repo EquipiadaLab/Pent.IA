@@ -6,10 +6,10 @@ import AppSidebar from "./components/sidebar"
 
 export function App() {
   return (
-    <div className="flex min-h-svh">
+    <div className="dark flex min-h-svh bg-background text-foreground">
       <SidebarProvider>
         <AppSidebar />
-        <SidebarInset className="px-8">
+        <SidebarInset className="min-w-0 px-4 sm:px-8">
           <AppHeader />
           <Campanha />
         </SidebarInset>
