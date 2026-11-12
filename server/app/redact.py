@@ -52,13 +52,14 @@ _SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
-def scrub_text(text: str | None) -> str | None:
-    """Remove segredos conhecidos de texto livre e limita o tamanho."""
+def scrub_text(text: str | None, limit: int | None = MAX_TEXT) -> str | None:
+    """Remove segredos conhecidos de texto livre e limita o tamanho
+    (``limit=None`` nao corta: usado para prompts de LLM)."""
     if text is None:
         return None
     for pat in _SECRET_PATTERNS:
         text = pat.sub("***", text)
-    return text[:MAX_TEXT]
+    return text if limit is None else text[:limit]
 
 
 def sanitize_url(url: str) -> str:

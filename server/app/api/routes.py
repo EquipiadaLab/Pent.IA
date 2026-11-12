@@ -75,19 +75,43 @@ async def _require_campaign(campaign_id: str, ctx: AppContext) -> Campaign:
     return campaign
 
 
+# Tetos impostos pelo SERVIDOR: a tela nao consegue afrouxar as regras.
+_SAFE_METHODS = ["GET", "OPTIONS"]
+_SAFE_PROFILES = {Profile.PASSIVE, Profile.ACTIVE_LIGHT}
+_MAX_RPS = 5.0
+_MAX_TOTAL = 500
+_MAX_TIMEOUT_S = 30.0
+
+
+def _enforce_server_limits(config: CampaignConfig) -> CampaignConfig:
+    """Mesmo formato de entrada; valores perigosos sao ignorados/limitados."""
+    profiles = [p for p in config.allowed_profiles if p in _SAFE_PROFILES] or [Profile.PASSIVE]
+    return config.model_copy(
+        update={
+            "allowed_methods": list(_SAFE_METHODS),
+            "allowed_profiles": profiles,
+            "max_requests_per_second": min(max(config.max_requests_per_second, 0.1), _MAX_RPS),
+            "max_total_requests": min(max(config.max_total_requests, 1), _MAX_TOTAL),
+            "request_timeout_s": min(max(config.request_timeout_s, 1.0), _MAX_TIMEOUT_S),
+            "authorized_at": config.authorized_at or _now(),
+        }
+    )
+
+
 @router.post("/campaigns", response_model=Campaign, status_code=201)
 async def create_campaign(
     body: CreateCampaignRequest, ctx: AppContext = Depends(get_ctx)
 ) -> Campaign:
     _preflight_scope(body.config, ctx)  # 403 sincrono
+    config = _enforce_server_limits(body.config)
     campaign = Campaign(
         id=uuid.uuid4().hex,
-        config=body.config,
+        config=config,
         state=CampaignState.CREATED,
         created_at=_now(),
     )
     await ctx.db.create_campaign(campaign)
-    ctx.launch_campaign(campaign.id, body.config)
+    ctx.launch_campaign(campaign.id, config)
     return campaign
 
 

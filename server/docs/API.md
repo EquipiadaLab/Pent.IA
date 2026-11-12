@@ -100,10 +100,13 @@ Sempre `{"detail": "mensagem"}` (padrão FastAPI). Mostre a mensagem como texto.
 ```
 Guarde o `id` e comece o polling (seção 3).
 
-**Site não autorizado:** a resposta ainda é **201**, mas a partida termina sem lances e chegam os
-eventos `scope_blocked` → `campaign_finished` com `data.state = "failed"` e `data.reason`.
+**Site não autorizado:** a resposta ainda é **201**, mas a partida termina sem lances, com
+`state = "failed"`, e chegam os eventos `scope_blocked` → `campaign_finished` com `data.reason`.
 Mostre isso em vermelho: *"Bloqueado: fora do escopo autorizado"*. É um ótimo momento da demo.
-(Atenção: hoje o `state` da campanha fica `finished` nesse caso; use `data.state` do evento.)
+
+**Regras do servidor:** se o corpo trouxer `allowed_methods`, limites de velocidade etc., o
+servidor **ignora ou limita** esses valores (só GET/OPTIONS, no máximo 5 req/s). A resposta mostra
+o `config` que realmente vale.
 
 ### 2.3 `GET /campaigns/{id}` — tabuleiro
 Retorna o `Campaign` completo (seção 4). Use para:
@@ -118,7 +121,7 @@ Sem corpo. Query opcional `?actor=Nome` (quem decidiu; padrão `operator`).
 ```json
 { "campaign_id": "dded14...", "move": 12, "approval": "approved" }
 ```
-- **409** se o lance não estiver aguardando (já decidido, ou clique cedo demais). Ver seção 3.3.
+- **409** só se o lance já foi decidido (ou não existe / não pede aprovação).
 
 ### 2.6 `POST /campaigns/{id}/stop` — parada de emergência
 Sem corpo. Retorna o `Campaign` com `state: "stopped"` e `finished_at` preenchido.
@@ -143,7 +146,10 @@ Peça confirmação antes ("Parar a partida?").
   ]
 }
 ```
-- Chame **só quando a partida terminar** (o resumo pode levar alguns segundos com a IA).
+- Chame **só quando a partida terminar**. Com a IA ligada, a **primeira** chamada leva ~20–30 s
+  (a IA escreve o resumo e comenta cada lance): mostre um "Analisando a partida...". As chamadas
+  seguintes são instantâneas (resultado guardado).
+- Depois do relatório, cada lance passa a ter `ai_explanation` (também em `GET /campaigns/{id}`).
 - `executive_summary` pode citar evidências como `[ev-10-4]`: transforme em link que rola até a
   evidência com esse `id` (seção 4.3).
 - `key_moments.move` aponta para o número do lance: clique leva ao lance.
@@ -174,8 +180,8 @@ const timer = setInterval(async () => {
 |---|---|---|---|
 | `campaign_started` | — | `{ origin }` | "Partida iniciada contra {origin}" |
 | `move_planned` | `Move` | `{}` | Card do lance aparece (cinza, "na fila") |
-| `approval_requested` | `Move` **ou** — | `{}` **ou** `{ move }` | Card **amarelo** com botões Aprovar/Negar (ver 3.3) |
-| `approval_resolved` | `Move` **ou** — | `{}` **ou** `{ move, approval, actor }` | Card vira aprovado (verde) ou negado (cinza) |
+| `approval_requested` | `Move` | `{ move }` | Card **amarelo** com botões Aprovar/Negar |
+| `approval_resolved` | `Move` | `{ move, approval, actor }` | Card vira aprovado (verde) ou negado (cinza); mostre "por {actor}" |
 | `test_started` | `Move` | `{}` | Card com animação "pensando" |
 | `finding_created` | `Move` | `{}` | Card ganha **nota, ícone, explicação e evidências** |
 | `score_updated` | — | `{ accuracy, eval_bar, score }` | Anima a **barra de avaliação** e a accuracy |
@@ -186,16 +192,14 @@ const timer = setInterval(async () => {
 **Regra de ouro:** o lance é identificado por `move.move` (ou `data.move`). Sempre **substitua** o
 card daquele número pelo `Move` mais recente — nunca crie um card duplicado.
 
-### 3.2 Eventos duplicados (limitação atual)
-`approval_requested` e `approval_resolved` chegam **duas vezes** por lance (uma com `move`, outra
-com `data.move`). Trate de forma idempotente: atualize o card pelo número do lance.
+### 3.2 Um evento por aprovação
+Cada lance sensível gera **exatamente um** `approval_requested` e **um** `approval_resolved`.
+Mesmo assim, atualize o card pelo número do lance (idempotente), que é a prática mais robusta.
 
 ### 3.3 Quando habilitar o botão Aprovar
-O botão só funciona depois que a API registrou o pedido. Regra segura:
-- habilite ao receber `approval_requested` **com `data.move`**; ou
-- se clicar e receber **409**, espere 1 s e tente de novo (até 3 vezes).
-
-Desabilite os botões após o clique (evita duplo clique) e reabilite se der erro.
+Assim que o lance aparecer com `approval: "pending"` (já no `move_planned`). Clicar cedo **não**
+dá mais 409. Desabilite os botões após o clique (evita duplo clique). Use `?actor=Nome` para
+registrar quem decidiu na auditoria.
 
 ---
 
@@ -249,7 +253,8 @@ Exemplo real:
 | `grade` | enum \| **null** | **Ícone e cor do lance** (tabela 4.5). `null` → card sem nota |
 | `confidence` | `low` \| `medium` \| `high` \| null | "Confiança: alta" no detalhe |
 | `evidence` | `Evidence[]` | Painel "Evidência" (pode ser vazio) |
-| `explanation` | string \| null | "O que encontramos" — **texto puro** |
+| `explanation` | string \| null | "O que encontramos" — fato do teste, **texto puro**. Sempre presente após executar |
+| `ai_explanation` | string \| null | **"Comentário do treinador" (IA)**: o que significa, impacto e primeiro passo, citando `[ev-…]`. Aparece depois do `GET /report`. Se `null`, mostre só `explanation`. **Texto puro**; transforme `[ev-…]` em link para a evidência |
 | `recommendation` | string \| null | "**Melhor lance**" (a correção) — mostre em bloco `<pre>`/`<code>` com botão copiar |
 | `started_at` / `finished_at` | ISO 8601 \| null | Duração do lance |
 
@@ -353,11 +358,14 @@ Guarde o histórico de `eval_bar` de cada `score_updated` para um **gráfico de 
 
 | Comportamento | Contorno no front |
 |---|---|
-| Eventos de aprovação duplicados | Atualizar card pelo número do lance (3.2) |
-| Aprovar cedo demais → 409 | Esperar `approval_requested` com `data.move` ou repetir (3.3) |
-| Site não autorizado deixa `state = finished` | Usar `campaign_finished.data.state` (`failed`) |
-| `executive_summary` via API vem com "[resumo gerado localmente...]" | Mostrar mesmo assim; a integração com a IA no endpoint está pendente |
-| API sem autenticação e com CORS aberto | Só para o hackathon, rodando local |
+| Primeira chamada do `/report` demora ~20–30 s (IA) | Mostrar "Analisando a partida..." |
+| Sem credenciais da AWS no servidor, `/health` mostra `llm: template` e `ai_explanation` fica `null` | Mostrar só `explanation` |
+| CORS liberado só para `http://localhost:5173` e `http://127.0.0.1:5173` | Rodar o Vite nessas portas, ou o backend ajusta `CORS_ORIGINS` no `.env` |
+| API sem autenticação | Só para o hackathon, rodando local |
+
+**Resolvido** (não precisa mais de contorno): eventos de aprovação duplicados, 409 ao aprovar cedo,
+site não autorizado com `state = finished`, aprovação que apagava o resultado do lance,
+resumo sem IA.
 
 ---
 
@@ -385,7 +393,7 @@ export interface Move {
   move: number; test_id: string; title: string; phase: Phase; profile: Profile;
   wstg: string | null; owasp_top10: string | null; approval: Approval;
   status: Status | null; severity: Severity; grade: Grade | null; confidence: Confidence | null;
-  evidence: Evidence[]; explanation: string | null; recommendation: string | null;
+  evidence: Evidence[]; explanation: string | null; ai_explanation: string | null; recommendation: string | null;
   started_at: string | null; finished_at: string | null;
 }
 export interface Score { accuracy: number; eval_bar: number; counts: Partial<Record<Grade, number>>; }

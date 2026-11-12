@@ -7,6 +7,7 @@ senao o fake de exemplo) e expoe as rotas. CORS liberado para o frontend.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -45,7 +46,7 @@ def build_context() -> AppContext:
     db = Database(settings.database_path)
     coordinator = Coordinator(db)
     runner, using_real = _resolve_runner()
-    report_builder = ReportBuilder(build_llm_client(settings))
+    report_builder = ReportBuilder(build_llm_client(settings), db=db)
     return AppContext(
         settings=settings,
         db=db,
@@ -66,14 +67,31 @@ async def lifespan(app: FastAPI):
         await ctx.shutdown()
 
 
+_DEFAULT_CORS = "http://localhost:5173,http://127.0.0.1:5173"
+
+
+def _cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", _DEFAULT_CORS)
+    return [o.strip() for o in raw.split(",") if o.strip() and o.strip() != "*"]
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="Pentest Chess — Plataforma", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # dev; restrinja em producao
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=_cors_origins(),  # so a tela (Vite); ajuste CORS_ORIGINS no .env
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
     )
+
+    @app.middleware("http")
+    async def security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+
     app.include_router(router)
 
     @app.get("/health")

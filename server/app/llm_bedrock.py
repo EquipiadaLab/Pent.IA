@@ -34,6 +34,9 @@ SAFETY_PREAMBLE = (
 )
 
 
+MAX_PROMPT = 120_000  # caracteres; teto de custo, bem acima de uma partida inteira
+
+
 class LLMError(RuntimeError):
     """Falha ao chamar o modelo. Mensagem generica, sem detalhes internos."""
 
@@ -55,8 +58,8 @@ class BedrockLLM:
         try:
             resp = self._client.converse(
                 modelId=self.model_id,
-                system=[{"text": f"{SAFETY_PREAMBLE}\n\n{scrub_text(system) or ''}"}],
-                messages=[{"role": "user", "content": [{"text": scrub_text(prompt) or ""}]}],
+                system=[{"text": f"{SAFETY_PREAMBLE}\n\n{scrub_text(system, MAX_PROMPT) or ''}"}],
+                messages=[{"role": "user", "content": [{"text": scrub_text(prompt, MAX_PROMPT) or ""}]}],
                 inferenceConfig={"maxTokens": max_tokens},
             )
             parts = resp["output"]["message"]["content"]

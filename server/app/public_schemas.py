@@ -63,6 +63,7 @@ class PublicMove(_Public):
     confidence: m.Confidence | None = None
     evidence: list[PublicEvidence] = Field(default_factory=list)
     explanation: str | None = None  # texto puro, nao HTML
+    ai_explanation: str | None = None  # texto puro, nao HTML
     recommendation: str | None = None  # texto puro, nao HTML
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -84,6 +85,7 @@ class PublicMove(_Public):
             confidence=mv.confidence,
             evidence=[PublicEvidence.from_internal(e) for e in mv.evidence],
             explanation=scrub_text(mv.explanation),
+            ai_explanation=scrub_text(mv.ai_explanation),
             recommendation=scrub_text(mv.recommendation),
             started_at=mv.started_at,
             finished_at=mv.finished_at,

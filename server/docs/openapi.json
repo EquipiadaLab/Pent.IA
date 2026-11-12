@@ -1072,6 +1072,17 @@
             ],
             "title": "Explanation"
           },
+          "ai_explanation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Explanation"
+          },
           "recommendation": {
             "anyOf": [
               {

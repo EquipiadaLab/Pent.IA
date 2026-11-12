@@ -38,11 +38,29 @@ class Settings:
         return bool(self.bedrock_model_id)
 
 
+DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-5-5"
+
+
+def _aws_credentials_available() -> bool:
+    try:
+        import boto3
+
+        return boto3.Session().get_credentials() is not None
+    except Exception:  # pragma: no cover
+        return False
+
+
 def load_settings() -> Settings:
+    # IA ligada se houver BEDROCK_MODEL_ID ou credenciais da AWS no ambiente.
+    # Desligue explicitamente com LLM_ENABLED=false.
+    model_id = os.getenv("BEDROCK_MODEL_ID") or None
+    disabled = os.getenv("LLM_ENABLED", "").strip().lower() in ("0", "false", "no", "nao")
+    if model_id is None and not disabled and _aws_credentials_available():
+        model_id = DEFAULT_MODEL_ID
     return Settings(
         database_path=_db_path_from_url(
             os.getenv("DATABASE_URL", "sqlite:///./pentest_chess.db")
         ),
-        aws_region=os.getenv("AWS_REGION", "us-east-1"),
-        bedrock_model_id=os.getenv("BEDROCK_MODEL_ID") or None,
+        aws_region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1",
+        bedrock_model_id=None if disabled else model_id,
     )

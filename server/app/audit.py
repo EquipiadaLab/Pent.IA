@@ -78,7 +78,8 @@ def mask_headers(headers: dict[str, str]) -> dict[str, str]:
     for key, value in headers.items():
         low = key.lower()
         if low in {"cookie", "set-cookie"}:
-            masked[key] = mask_cookie_value(value)
+            # varios Set-Cookie chegam unidos por quebra de linha: mascara cada um
+            masked[key] = "\n".join(mask_cookie_value(v) for v in value.split("\n"))
         elif low in _SENSITIVE_HEADERS:
             masked[key] = MASK
         else:

@@ -153,7 +153,8 @@ class Move(BaseModel):
     confidence: Confidence | None = None
 
     evidence: list[Evidence] = Field(default_factory=list)
-    explanation: str | None = None  # preenchido pelo Reporter (LLM) citando evidence ids
+    explanation: str | None = None  # fato deterministico do teste (sempre presente apos executar)
+    ai_explanation: str | None = None  # comentario da IA (Game Review), cita evidence ids; pode faltar
     recommendation: str | None = None  # "melhor lance": a correcao
 
     started_at: datetime | None = None

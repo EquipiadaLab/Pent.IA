@@ -7,6 +7,14 @@ Entrega ao Trilho A (o Motor):
 
 O Motor chama ``sink.emit / audit / should_stop / wait_approval``. A API
 chama o ``Coordinator`` para resolver aprovacoes e pedir parada.
+
+Garantias da fila de aprovacao:
+- o pedido fica "aprovavel" assim que o lance aparece como ``pending``
+  (sem 409 por clicar cedo);
+- exatamente UM ``approval_requested`` e UM ``approval_resolved`` por lance,
+  ambos com ``move`` e ``data.move`` (o resolved traz ``approval`` e ``actor``);
+- a decisao e gravada ANTES de o Motor continuar, entao nunca sobrescreve o
+  resultado do teste.
 """
 
 from __future__ import annotations
@@ -26,6 +34,8 @@ from app.models import (
     Move,
     Score,
 )
+
+STOP_ACTOR = "parada de emergencia"
 
 
 def _utcnow() -> datetime:
@@ -49,6 +59,7 @@ class Coordinator:
         self.audit = AuditTrail(db)
         self._stop: dict[str, asyncio.Event] = {}
         self._pending: dict[tuple[str, int], asyncio.Future[Approval]] = {}
+        self._actors: dict[tuple[str, int], str] = {}
         self._lock = asyncio.Lock()
 
     # ---- parada de emergencia -------------------------------------------
@@ -76,8 +87,9 @@ class Coordinator:
         await self.db.set_state(campaign_id, CampaignState.STOPPED, finished=True)
         # Libera quem estiver aguardando aprovacao: parada vence tudo.
         async with self._lock:
-            for (cid, _move), fut in list(self._pending.items()):
+            for (cid, move_no), fut in list(self._pending.items()):
                 if cid == campaign_id and not fut.done():
+                    self._actors[(cid, move_no)] = STOP_ACTOR
                     fut.set_result(Approval.DENIED)
 
     # ---- aprovacao ------------------------------------------------------
@@ -87,13 +99,21 @@ class Coordinator:
     async def _register_approval(
         self, campaign_id: str, move_no: int
     ) -> asyncio.Future[Approval]:
+        """Devolve o futuro do lance (cria se nao existir). Um futuro ja
+        resolvido e devolvido como esta: a decisao antecipada vale."""
         async with self._lock:
             key = (campaign_id, move_no)
             fut = self._pending.get(key)
-            if fut is None or fut.done():
+            if fut is None:
                 fut = asyncio.get_running_loop().create_future()
+                if self.is_stop_requested(campaign_id):
+                    self._actors[key] = STOP_ACTOR
+                    fut.set_result(Approval.DENIED)
                 self._pending[key] = fut
             return fut
+
+    def actor_for(self, campaign_id: str, move_no: int) -> str | None:
+        return self._actors.get((campaign_id, move_no))
 
     def pending_moves(self, campaign_id: str) -> list[int]:
         return sorted(
@@ -105,6 +125,8 @@ class Coordinator:
     async def resolve_approval(
         self, campaign_id: str, move_no: int, approved: bool, actor: str
     ) -> Approval:
+        """Registra a decisao humana. O evento ``approval_resolved`` e o
+        lance atualizado sao gravados pelo sink da campanha."""
         async with self._lock:
             fut = self._pending.get((campaign_id, move_no))
             if fut is None or fut.done():
@@ -112,24 +134,8 @@ class Coordinator:
                     f"Lance {move_no} da campanha {campaign_id} nao esta aguardando aprovacao."
                 )
             decision = Approval.APPROVED if approved else Approval.DENIED
+            self._actors[(campaign_id, move_no)] = actor
             fut.set_result(decision)
-
-        await self.db.append_event(
-            Event(
-                campaign_id=campaign_id,
-                type=EventType.APPROVAL_RESOLVED,
-                at=_utcnow(),
-                data={"move": move_no, "approval": decision.value, "actor": actor},
-            )
-        )
-        # Persiste a decisao no lance e devolve a campanha a RUNNING.
-        move = await self.db.get_move(campaign_id, move_no)
-        if move is not None:
-            await self.db.upsert_move(
-                campaign_id, move.model_copy(update={"approval": decision})
-            )
-        if not self.is_stop_requested(campaign_id):
-            await self.db.set_state(campaign_id, CampaignState.RUNNING)
         return decision
 
 
@@ -140,12 +146,28 @@ class SQLiteEventSink(EventSink):
         self._co = coordinator
         self._db = coordinator.db
         self.campaign_id = campaign_id
+        self._requested: set[int] = set()
+        self._resolved: set[int] = set()
 
     async def emit(self, event: Event) -> None:
         if event.campaign_id != self.campaign_id:
             event = event.model_copy(update={"campaign_id": self.campaign_id})
         if event.move is not None:
             event = event.model_copy(update={"move": _sanitize_move(event.move)})
+            if event.move.approval is Approval.PENDING:
+                # Aprovavel desde ja: evita 409 se o humano clicar cedo.
+                await self._co._register_approval(self.campaign_id, event.move.move)
+
+        move_no = _move_no(event)
+        if event.type is EventType.APPROVAL_REQUESTED and move_no is not None:
+            if move_no in self._requested:
+                return  # dedup
+            self._requested.add(move_no)
+            event = event.model_copy(update={"data": {**event.data, "move": move_no}})
+        if event.type is EventType.APPROVAL_RESOLVED and move_no is not None:
+            if move_no in self._resolved:
+                return  # dedup: o sink ja publicou ao receber a decisao
+            self._resolved.add(move_no)
 
         await self._db.append_event(event)  # atribui seq
 
@@ -163,39 +185,63 @@ class SQLiteEventSink(EventSink):
         return self._co.is_stop_requested(self.campaign_id)
 
     async def wait_approval(self, campaign_id: str, move: Move) -> Approval:
-        if self._co.is_stop_requested(self.campaign_id):
-            return Approval.DENIED
-
-        pending = move.model_copy(update={"approval": Approval.PENDING})
-        await self._db.upsert_move(self.campaign_id, _sanitize_move(pending))
+        pending = _sanitize_move(move.model_copy(update={"approval": Approval.PENDING}))
         fut = await self._co._register_approval(self.campaign_id, move.move)
+        if move.move not in self._requested:  # runners que nao emitem o pedido
+            await self.emit(
+                Event(
+                    campaign_id=self.campaign_id,
+                    type=EventType.APPROVAL_REQUESTED,
+                    at=_utcnow(),
+                    move=pending,
+                    data={"move": move.move},
+                )
+            )
 
-        await self._db.append_event(
+        decision = await fut
+
+        # Grava a decisao ANTES de devolver ao Motor (nao sobrescreve resultado).
+        decided = pending.model_copy(update={"approval": decision})
+        actor = self._co.actor_for(self.campaign_id, move.move) or "operator"
+        await self.emit(
             Event(
                 campaign_id=self.campaign_id,
-                type=EventType.APPROVAL_REQUESTED,
+                type=EventType.APPROVAL_RESOLVED,
                 at=_utcnow(),
-                move=_sanitize_move(pending),
-                data={"move": move.move},
+                move=decided,
+                data={"move": move.move, "approval": decision.value, "actor": actor},
             )
         )
-        await self._db.set_state(self.campaign_id, CampaignState.WAITING_APPROVAL)
-
-        return await fut
+        if not self._co.is_stop_requested(self.campaign_id):
+            await self._db.set_state(self.campaign_id, CampaignState.RUNNING)
+        return decision
 
     async def _apply_state(self, event: Event) -> None:
         t = event.type
         if t is EventType.CAMPAIGN_STARTED:
             await self._db.set_state(self.campaign_id, CampaignState.RUNNING)
+        elif t is EventType.APPROVAL_REQUESTED:
+            if not self._co.is_stop_requested(self.campaign_id):
+                await self._db.set_state(self.campaign_id, CampaignState.WAITING_APPROVAL)
         elif t is EventType.SCORE_UPDATED and "score" in event.data:
             await self._db.set_score(
                 self.campaign_id, Score.model_validate(event.data["score"])
             )
         elif t is EventType.CAMPAIGN_FINISHED:
-            if not self._co.is_stop_requested(self.campaign_id):
-                await self._db.set_state(
-                    self.campaign_id, CampaignState.FINISHED, finished=True
-                )
+            if self._co.is_stop_requested(self.campaign_id):
+                return
+            final = {
+                "failed": CampaignState.FAILED,
+                "stopped": CampaignState.STOPPED,
+            }.get(str(event.data.get("state", "")), CampaignState.FINISHED)
+            await self._db.set_state(self.campaign_id, final, finished=True)
+
+
+def _move_no(event: Event) -> int | None:
+    if event.move is not None:
+        return event.move.move
+    value = event.data.get("move")
+    return value if isinstance(value, int) else None
 
 
 def _sanitize_move(move: Move) -> Move:

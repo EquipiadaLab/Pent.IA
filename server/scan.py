@@ -30,6 +30,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(ROOT / ".env")
 
 from app.authorization import explain_refusal, is_authorized  # noqa: E402
+from app.explainer import apply_explanations, validate_citations  # noqa: E402
 from app.engine.memory_sink import MemorySink  # noqa: E402
 from app.engine.runner import run_campaign  # noqa: E402
 from app.engine.scope import utcnow  # noqa: E402
@@ -106,13 +107,6 @@ def passos_reproducao(origin: str, m: Move) -> list[str]:
     return list(dict.fromkeys(cmds))
 
 
-def validar_citacoes(texto: str, ids_validos: set[str]) -> str:
-    """Remove frases do LLM que citam evidencias inexistentes (anti-alucinacao)."""
-    frases = re.split(r"(?<=[.!?])\s+", texto.strip())
-    boas = [f for f in frases if all(i in ids_validos for i in re.findall(r"ev-\d+-\d+", f))]
-    return " ".join(boas)
-
-
 async def resumo_ia(campaign: Campaign) -> tuple[str, str]:
     """Resumo executivo pelo Claude (Bedrock). Se falhar, usa texto automatico."""
     ruins = sorted((m for m in campaign.moves if m.grade in GRAVIDADE), key=lambda m: GRAVIDADE[m.grade])
@@ -129,7 +123,7 @@ async def resumo_ia(campaign: Campaign) -> tuple[str, str]:
 
         texto = await BedrockLLM().complete("Relatorio de pentest em portugues.", prompt, max_tokens=700)
         ids = {e.id for m in campaign.moves for e in m.evidence}
-        return validar_citacoes(texto, ids), "Claude (Amazon Bedrock)"
+        return validate_citations(texto, ids), "Claude (Amazon Bedrock)"
     except Exception as exc:  # noqa: BLE001
         top = ", ".join(m.title for m in ruins[:3]) or "nenhum problema grave"
         return (f"Accuracy {campaign.score.accuracy}/100. Prioridades: {top}.",
@@ -166,6 +160,8 @@ def markdown(c: Campaign, sink: MemorySink, resumo: str, fonte: str, inicio: dat
         if m.status:
             L += [f"- **Resultado:** {m.status.value} · severidade {m.severity.value} · confianca {m.confidence.value if m.confidence else '-'}",
                   f"- **O que encontramos:** {m.explanation}"]
+            if m.ai_explanation:
+                L.append(f"- **Comentario do treinador (IA):** {m.ai_explanation}")
             if m.recommendation:
                 L.append(f"- **Melhor lance (correcao):** `{m.recommendation}`")
             for ev in m.evidence:
@@ -216,7 +212,15 @@ async def principal(a: argparse.Namespace) -> int:
     if campanha.state.value == "failed":
         return 3
     print(f"\n  Accuracy final: {campanha.score.accuracy}/100   " + barra(campanha.score.eval_bar))
-    print("  Gerando resumo executivo com a IA...")
+    print("  A IA esta comentando cada lance e escrevendo o resumo...")
+    try:
+        from app.llm_bedrock import BedrockLLM
+
+        await apply_explanations(BedrockLLM(), campanha)
+    except Exception:  # noqa: BLE001 - sem IA, o relatorio sai sem comentarios
+        pass
+    comentados = sum(1 for m in campanha.moves if m.ai_explanation)
+    print(f"  Lances comentados pela IA: {comentados}/{sum(1 for m in campanha.moves if m.status)}")
     resumo, fonte = await resumo_ia(campanha)
     print(f"\n  Resumo ({fonte}):\n  {resumo}\n")
 
