@@ -45,12 +45,19 @@ JUDGE_SYSTEM = (
 )
 
 SUMMARY_SYSTEM = (
-    "Voce escreve o resumo executivo de um pentest para um gestor NAO tecnico, em portugues simples. "
-    "Use SOMENTE os fatos fornecidos. Responda APENAS com JSON: "
-    '{"headline":"1 frase","plain_language":"3 a 5 frases","top_risks":[{"move":<numero>,"why":"1 frase"}],'
-    '"next_steps":["acao curta", "..."]} '
-    "top_risks: ate 3 lances com problema confirmado, do mais grave ao menos grave. next_steps: ate 4 acoes, "
-    "em ordem de prioridade. Pode citar evidencias [ev-N-N] somente dentre as fornecidas."
+    "Voce escreve o resumo final de uma analise de seguranca para o DONO DO SITE, que NAO entende de "
+    "tecnologia (imagine o dono de uma loja ou um gestor leigo). Linguagem simples e direta, SEM termos "
+    "tecnicos: nada de 'cabecalho', 'TLS', 'CORS', 'CSP', 'HTTP'. Use analogias do dia a dia (cadeado, "
+    "porta destrancada, chave esquecida na fechadura). Explique o RISCO em termos de consequencia real "
+    "(ex.: 'alguem pode ler a senha dos seus clientes'). "
+    "Use SOMENTE os fatos fornecidos; nao invente. Responda APENAS com JSON: "
+    '{"headline":"1 frase de impacto, sem jargao","plain_language":"4 a 6 frases explicando a situacao '
+    'em linguagem leiga e terminando com o que priorizar","top_risks":[{"move":<numero>,"why":"1 frase '
+    'leiga sobre a consequencia"}],"next_steps":["acao concreta em linguagem simples", "..."]} '
+    "top_risks: ate 3 problemas confirmados, do mais grave ao menos grave. "
+    "next_steps: ate 6 acoes do tipo 'o que pedir ao seu tecnico para arrumar', em ordem de prioridade, "
+    "cada uma em UMA frase simples (ex.: 'Instale o cadeado de seguranca (HTTPS) no site inteiro'). "
+    "NAO cite codigos de evidencia nem IDs tecnicos no texto."
 )
 
 
@@ -178,15 +185,19 @@ def rules_summary(campaign: Campaign) -> ExecutiveSummary:
     probs = _problems(campaign)
     acc = campaign.score.accuracy if campaign.score else 0
     level = risk_level(campaign)
-    headline = (f"{len(probs)} problema(s) encontrado(s); risco {level}." if probs
+    nivel_texto = {"critico": "muito grave", "alto": "grave", "medio": "moderado", "baixo": "baixo"}[level]
+    headline = (f"Encontramos {len(probs)} ponto(s) de atencao; risco {nivel_texto}." if probs
                 else "Nenhum problema relevante encontrado nos testes executados.")
+    plain = (f"A analise terminou com nota {acc} de 100 em seguranca de configuracao. "
+             + (f"Os pontos mais importantes a resolver sao: {', '.join(m.title.lower() for m in probs[:3])}. "
+                "Veja abaixo, em ordem, o que pedir ao seu tecnico para arrumar."
+                if probs else "O site passou nos testes executados."))
     return ExecutiveSummary(
         headline=headline,
         risk_level=level,
-        plain_language=f"Accuracy {acc}/100 nos testes de configuracao executados. "
-                       + (f"Os mais graves: {', '.join(m.title for m in probs[:3])}." if probs else ""),
+        plain_language=plain,
         top_risks=[TopRisk(move=m.move, title=m.title, why=m.impact or m.explanation or "") for m in probs[:3]],
-        next_steps=[m.recommendation for m in probs[:4] if m.recommendation],
+        next_steps=[f"Corrigir: {m.title}." for m in probs[:6]],
         source="rules",
     )
 
@@ -225,5 +236,5 @@ async def build_summary(llm: LLMClient | None, campaign: Campaign) -> ExecutiveS
     if not plain:
         return fallback
     return ExecutiveSummary(headline=headline, risk_level=fallback.risk_level, plain_language=plain,
-                            top_risks=risks[:3] or fallback.top_risks, next_steps=steps[:4] or fallback.next_steps,
+                            top_risks=risks[:3] or fallback.top_risks, next_steps=steps[:6] or fallback.next_steps,
                             source="ai")

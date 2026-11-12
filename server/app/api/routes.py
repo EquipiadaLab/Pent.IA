@@ -30,7 +30,7 @@ from app.models import (
     Move,
     Profile,
 )
-from app.authorization import default_target
+from app.authorization import default_target, locked_target
 from app.comparison import failing
 from app.engine.scope import normalize_origin
 from app.report import PDF_AVAILABLE, to_markdown, to_pdf
@@ -122,12 +122,17 @@ async def _revalidation_tests(previous_id: str, config: CampaignConfig, ctx: App
 async def create_campaign(
     body: CreateCampaignRequest, ctx: AppContext = Depends(get_ctx)
 ) -> Campaign:
-    sent_origin = body.config.origin
-    raw_origin = (sent_origin or "").strip() or default_target()
-    used_default = not (sent_origin or "").strip()
+    sent_origin = (body.config.origin or "").strip()
+    locked = locked_target()
+    if locked:  # alvo travado: ignora o que o front manda; so o alvo travado vale
+        if sent_origin and normalize_origin(sent_origin) != normalize_origin(locked):
+            raise HTTPException(status_code=403, detail=f"Alvo travado: este sistema so testa {locked}.")
+        raw_origin = locked
+    else:
+        raw_origin = sent_origin or default_target()
     logger.info(
-        "POST /campaigns | origin recebido do front: %r | usou DEFAULT_TARGET: %s | alvo final: %s",
-        sent_origin, used_default, raw_origin,
+        "POST /campaigns | origin do front: %r | travado: %s | alvo final: %s",
+        body.config.origin, bool(locked), raw_origin,
     )
     config0 = body.config.model_copy(update={"origin": raw_origin})
     _preflight_scope(config0, ctx)  # 403 sincrono
