@@ -6,7 +6,7 @@
 > - **Swagger (testar no navegador):** http://127.0.0.1:8000/docs
 > - **OpenAPI JSON (gerar tipos):** http://127.0.0.1:8000/openapi.json
 
-## 0. Subir o backend
+## 0. Subir o backendA
 
 ```bash
 cd server
