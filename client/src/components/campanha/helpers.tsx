@@ -76,6 +76,52 @@ export function gradeLabel(grade: MoveGrade | null) {
   }[grade];
 }
 
+export function gradeTone(grade: MoveGrade | null) {
+  if (!grade) return "border-white/10 text-zinc-400";
+  if (["brilliant", "great", "best", "good"].includes(grade))
+    return "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
+  if (["inaccuracy", "mistake"].includes(grade))
+    return "border-amber-400/30 bg-amber-400/10 text-amber-200";
+  if (["miss", "blunder"].includes(grade))
+    return "border-rose-400/30 bg-rose-400/10 text-rose-300";
+  return "border-white/10 bg-white/[0.04] text-zinc-400";
+}
+
+export function statusTag(move: CampaignMove): {
+  label: string;
+  className: string;
+} {
+  if (move.approval === "pending")
+    return {
+      label: "Pendente",
+      className: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+    };
+  if (move.approval === "denied")
+    return {
+      label: "Bloqueado",
+      className: "border-white/10 bg-white/[0.04] text-zinc-400",
+    };
+  if (move.status === "fail")
+    return {
+      label: "Falha",
+      className: "border-rose-400/30 bg-rose-400/10 text-rose-300",
+    };
+  if (move.status === "warning")
+    return {
+      label: "Atenção",
+      className: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+    };
+  if (move.status === "pass")
+    return {
+      label: "Validado",
+      className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+    };
+  return {
+    label: "Inconclusivo",
+    className: "border-white/10 bg-white/[0.04] text-zinc-400",
+  };
+}
+
 export function moveTone(move: CampaignMove) {
   if (move.approval === "pending") return "border-amber-400/40 bg-amber-400/5";
   if (move.approval === "denied") return "border-white/10 bg-white/[0.02]";

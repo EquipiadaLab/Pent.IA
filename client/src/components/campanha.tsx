@@ -30,7 +30,6 @@ import {
 } from "./campanha/campaign-report";
 import {
     ACTIVE_STATES,
-    DEFAULT_LOCAL_TARGET,
     isLoopbackOrigin,
     stateLabel,
 } from "./campanha/helpers";
@@ -41,6 +40,10 @@ import type {
     GameReview,
     Scope,
 } from "./campanha/types";
+import {
+    useCampaignWebSocket,
+    type CampaignWebSocketState,
+} from "./campanha/use-campaign-websocket";
 import { DashboardHeader } from "./dashboard.header";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
@@ -53,6 +56,8 @@ export default function Campanha() {
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [reportOpenFor, setReportOpenFor] = useState("");
+    const [webSocketState, setWebSocketState] =
+        useState<CampaignWebSocketState>({ status: "idle", message: "" });
 
     const campaignsQuery = useQuery({
         queryKey: ["campaigns"],
@@ -80,19 +85,12 @@ export default function Campanha() {
     );
     const campaignId =
         selectedId || defaultCampaign?.id || campaigns[0]?.id || "";
-    const localTargets = useMemo(
-        () =>
-            Array.from(
-                new Set([
-                    DEFAULT_LOCAL_TARGET,
-                    ...(scope?.authorized_targets || []).filter(isLoopbackOrigin),
-                ]),
-            ),
+    const authorizedTargets = useMemo(
+        () => scope?.authorized_targets || [],
         [scope],
     );
-    const origin =
-        scope?.authorized_targets.find(isLoopbackOrigin) ||
-        DEFAULT_LOCAL_TARGET;
+    const hasAuthorizedTargets = authorizedTargets.length > 0;
+    const origin = authorizedTargets[0] || "";
 
     const campaignQuery = useQuery({
         queryKey: ["campaign", campaignId],
@@ -101,7 +99,9 @@ export default function Campanha() {
                 .data,
         enabled: Boolean(campaignId),
         refetchInterval: (query) =>
-            query.state.data && ACTIVE_STATES.includes(query.state.data.state)
+            query.state.data &&
+                ACTIVE_STATES.includes(query.state.data.state) &&
+                webSocketState.status !== "connected"
                 ? 1500
                 : false,
     });
@@ -115,7 +115,9 @@ export default function Campanha() {
             ).data,
         enabled: Boolean(campaignId),
         refetchInterval: (query) =>
-            query.state.data && ACTIVE_STATES.includes(query.state.data.state)
+            query.state.data &&
+                ACTIVE_STATES.includes(query.state.data.state) &&
+                webSocketState.status !== "connected"
                 ? 1500
                 : false,
     });
@@ -133,6 +135,16 @@ export default function Campanha() {
     const campaign = campaignQuery.data || null;
     const campaignStatus = statusQuery.data || null;
     const report = reportQuery.data || null;
+    const campaignIsActive = Boolean(
+        campaign && ACTIVE_STATES.includes(campaign.state),
+    );
+
+    useCampaignWebSocket({
+        campaignId,
+        enabled: Boolean(campaign && campaignStatus && campaignIsActive),
+        initialSeq: campaignStatus?.last_seq ?? 0,
+        onStatusChange: setWebSocketState,
+    });
 
     const createCampaignMutation = useMutation({
         mutationFn: async (body: CreateCampaignBody) =>
@@ -228,9 +240,6 @@ export default function Campanha() {
     const isLocalCampaign = Boolean(
         campaign && isLoopbackOrigin(campaign.config.origin),
     );
-    const campaignIsActive = Boolean(
-        campaign && ACTIVE_STATES.includes(campaign.state),
-    );
     const pendingMoves =
         campaign?.moves.filter((move) => move.approval === "pending") || [];
     const latestMove = campaign?.moves[campaign.moves.length - 1] || null;
@@ -238,6 +247,12 @@ export default function Campanha() {
     function createCampaign(values: CampaignFormValues) {
         setError("");
         setNotice("");
+        if (!authorizedTargets.includes(values.origin)) {
+            setError(
+                "Nenhum alvo autorizado. Configure AUTHORIZED_TARGETS no servidor antes de iniciar uma campanha.",
+            );
+            return;
+        }
         createCampaignMutation.mutate({
             config: {
                 origin: values.origin,
@@ -251,8 +266,7 @@ export default function Campanha() {
         moveNumber: number,
         decision: "approve" | "deny",
     ) {
-        if (!campaign || !isLocalCampaign) {
-            setError("Aprovações estão disponíveis apenas para campanhas locais.");
+        if (!campaign) {
             return;
         }
         setPendingAction(`${decision}-${moveNumber}`);
@@ -316,6 +330,30 @@ export default function Campanha() {
                 description="Acompanhe a validação do escopo autorizado, lance a lance."
                 actions={
                     <div className="flex items-center gap-2">
+                        {campaignIsActive && (
+                            <span
+                                role="status"
+                                aria-live="polite"
+                                title={webSocketState.message || undefined}
+                                className="hidden items-center gap-2 text-xs text-zinc-400 sm:flex"
+                            >
+                                <span
+                                    className={`size-2 rounded-full ${webSocketState.status === "connected"
+                                            ? "bg-emerald-400"
+                                            : webSocketState.status === "error"
+                                                ? "bg-rose-400"
+                                                : "bg-amber-400"
+                                        }`}
+                                />
+                                {webSocketState.status === "connected"
+                                    ? "Atualizações ao vivo"
+                                    : webSocketState.status === "polling"
+                                        ? "Polling ativo"
+                                        : webSocketState.status === "error"
+                                            ? "WebSocket indisponível"
+                                            : "Conectando ao vivo"}
+                            </span>
+                        )}
                         {campaigns.length > 0 && (
                             <select
                                 aria-label="Selecionar campanha"
@@ -375,8 +413,8 @@ export default function Campanha() {
                 <div
                     role={visibleError ? "alert" : "status"}
                     className={`mt-4 flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${visibleError
-                            ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
-                            : "border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-200"
+                        ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
+                        : "border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-200"
                         }`}
                 >
                     {visibleError ? (
@@ -398,23 +436,80 @@ export default function Campanha() {
                 </div>
             )}
 
-            {showCreate && (
-                <CampaignCreateForm
-                    targets={localTargets}
-                    defaultOrigin={origin}
-                    isSubmitting={isCreating}
-                    apiError={
-                        createCampaignMutation.error
-                            ? getApiErrorMessage(createCampaignMutation.error)
-                            : ""
-                    }
-                    scopeError={
-                        scopeQuery.error ? getApiErrorMessage(scopeQuery.error) : ""
-                    }
-                    onRetryScope={() => void scopeQuery.refetch()}
-                    onSubmit={createCampaign}
-                />
-            )}
+            {showCreate &&
+                (scopeQuery.isPending ? (
+                    <Card className="mt-5 border-white/10 bg-zinc-950/80">
+                        <CardContent className="flex min-h-40 items-center justify-center text-zinc-500">
+                            <LoaderCircle className="size-5 animate-spin" />
+                        </CardContent>
+                    </Card>
+                ) : hasAuthorizedTargets ? (
+                    <CampaignCreateForm
+                        targets={authorizedTargets}
+                        defaultOrigin={origin}
+                        isSubmitting={isCreating}
+                        apiError={
+                            createCampaignMutation.error
+                                ? getApiErrorMessage(createCampaignMutation.error)
+                                : ""
+                        }
+                        scopeError={
+                            scopeQuery.error ? getApiErrorMessage(scopeQuery.error) : ""
+                        }
+                        onRetryScope={() => void scopeQuery.refetch()}
+                        onSubmit={createCampaign}
+                    />
+                ) : (
+                    <Card
+                        id="campaign-create"
+                        className="mt-5 border-amber-500/25 bg-amber-500/[0.04]"
+                    >
+                        <CardContent className="flex min-h-56 flex-col items-center justify-center gap-4 text-center">
+                            <span className="grid size-12 place-items-center rounded-2xl border border-amber-400/25 bg-amber-400/10 text-amber-200">
+                                <ShieldAlert className="size-6" />
+                            </span>
+                            <div className="space-y-1">
+                                <p className="text-sm font-semibold text-zinc-100">
+                                    Nenhum alvo autorizado
+                                </p>
+                                <p className="max-w-md text-xs leading-relaxed text-zinc-400">
+                                    O servidor não retornou nenhuma origem em{" "}
+                                    <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-zinc-300">
+                                        authorized_targets
+                                    </code>
+                                    . Configure{" "}
+                                    <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-zinc-300">
+                                        AUTHORIZED_TARGETS
+                                    </code>{" "}
+                                    no <code className="font-mono">.env</code> do servidor para
+                                    liberar a criação de campanhas.
+                                </p>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={scopeQuery.isFetching}
+                                    className="border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/10 hover:text-white"
+                                    onClick={() => void scopeQuery.refetch()}
+                                >
+                                    <RefreshCw
+                                        className={scopeQuery.isFetching ? "animate-spin" : ""}
+                                    />
+                                    Recarregar escopo
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-white/10 bg-transparent text-zinc-400 hover:bg-white/5"
+                                    onClick={() => setShowCreate(false)}
+                                >
+                                    Fechar
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                ))}
 
             {!campaign && !showCreate && (
                 <Card className="mt-5 border-white/10 bg-zinc-950/80">
@@ -485,7 +580,6 @@ export default function Campanha() {
                         campaign={campaign}
                         latestMove={latestMove}
                         active={campaignIsActive}
-                        isLocal={isLocalCampaign}
                         pendingAction={pendingAction}
                         campaignError={
                             campaignQuery.error

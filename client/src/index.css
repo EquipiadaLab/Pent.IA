@@ -131,3 +131,31 @@
     @apply font-sans;
   }
 }
+
+@layer utilities {
+  .timeline-scrollbar {
+    scrollbar-color: rgb(244 63 94 / 0.45) rgb(255 255 255 / 0.03);
+    scrollbar-width: thin;
+  }
+
+  .timeline-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .timeline-scrollbar::-webkit-scrollbar-track {
+    border-radius: 9999px;
+    background: rgb(255 255 255 / 0.03);
+  }
+
+  .timeline-scrollbar::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background: rgb(244 63 94 / 0.45);
+    background-clip: padding-box;
+  }
+
+  .timeline-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgb(251 113 133 / 0.75);
+    background-clip: padding-box;
+  }
+}

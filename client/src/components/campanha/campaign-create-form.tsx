@@ -1,9 +1,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Play, Shield } from "lucide-react";
-import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useEffect, useMemo } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
-import { isLoopbackOrigin } from "./helpers";
 import { Button } from "../ui/button";
 import {
   Card,
@@ -12,21 +11,35 @@ import {
   CardTitle,
 } from "../ui/card";
 import { Input } from "../ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { ApiErrorState } from "./api-error-state";
 
-const campaignFormSchema = z.object({
-  origin: z
-    .string()
-    .url("Informe uma URL válida.")
-    .refine(isLoopbackOrigin, "Selecione um alvo local autorizado."),
-  authorizedBy: z
-    .string()
-    .trim()
-    .min(1, "Informe quem autorizou a campanha.")
-    .max(120, "Use até 120 caracteres."),
-});
+function createCampaignFormSchema(targets: string[]) {
+  return z.object({
+    origin: z
+      .string()
+      .url("Informe uma URL válida.")
+      .refine(
+        (origin) => targets.includes(origin),
+        "Selecione uma origem presente na allowlist.",
+      ),
+    authorizedBy: z
+      .string()
+      .trim()
+      .min(1, "Informe quem autorizou a campanha.")
+      .max(120, "Use até 120 caracteres."),
+  });
+}
 
-export type CampaignFormValues = z.infer<typeof campaignFormSchema>;
+export type CampaignFormValues = z.infer<
+  ReturnType<typeof createCampaignFormSchema>
+>;
 
 interface CampaignCreateFormProps {
   targets: string[];
@@ -47,8 +60,12 @@ export function CampaignCreateForm({
   onRetryScope,
   onSubmit,
 }: CampaignCreateFormProps) {
+  const campaignFormSchema = useMemo(
+    () => createCampaignFormSchema(targets),
+    [targets],
+  );
   const {
-    register,
+    control,
     handleSubmit,
     getFieldState,
     setValue,
@@ -82,7 +99,7 @@ export function CampaignCreateForm({
               Configurar campanha autorizada
             </CardTitle>
             <p className="mt-1 text-xs text-zinc-500">
-              O alvo é limitado ao ambiente local de treino.
+              Os alvos disponíveis vêm da allowlist retornada pelo servidor.
             </p>
           </div>
         </div>
@@ -105,36 +122,57 @@ export function CampaignCreateForm({
         >
           <label className="grid content-start gap-2 text-xs text-zinc-400">
             Site autorizado
-            <select
-              {...register("origin")}
-              aria-invalid={Boolean(errors.origin)}
-              className="h-10 rounded-xl border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-100 outline-none focus:border-rose-500/60 aria-invalid:border-rose-500"
-            >
-              {targets.map((target) => (
-                <option key={target} value={target}>
-                  {target}
-                </option>
-              ))}
-            </select>
+            <Controller
+              control={control}
+              name="origin"
+              render={({ field }) => (
+                <Select
+                  name={field.name}
+                  value={field.value || null}
+                  onValueChange={(value) => field.onChange(value ?? "")}
+                >
+                  <SelectTrigger
+                    ref={field.ref}
+                    onBlur={field.onBlur}
+                    aria-invalid={Boolean(errors.origin)}
+                  >
+                    <SelectValue placeholder="Selecione um alvo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {targets.map((target) => (
+                      <SelectItem key={target} value={target}>
+                        {target}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
             {errors.origin ? (
               <span className="text-[11px] text-rose-300">
                 {errors.origin.message}
               </span>
             ) : (
               <span className="text-[11px] text-zinc-600">
-                Somente alvos localhost/127.0.0.1 são aceitos nesta tela.
+                Apenas origens listadas em authorized_targets podem ser selecionadas.
               </span>
             )}
           </label>
           <label className="grid content-start gap-2 text-xs text-zinc-400">
             Quem autorizou
-            <Input
-              {...register("authorizedBy")}
-              placeholder="Organização / responsável"
-              autoComplete="organization"
-              aria-invalid={Boolean(errors.authorizedBy)}
-              className="h-10 border-white/10 bg-zinc-900 text-zinc-100 placeholder:text-zinc-600 aria-invalid:border-rose-500"
-              maxLength={120}
+            <Controller
+              control={control}
+              name="authorizedBy"
+              render={({ field }) => (
+                <Input
+                  {...field}
+                  placeholder="Organização / responsável"
+                  autoComplete="organization"
+                  aria-invalid={Boolean(errors.authorizedBy)}
+                  className="h-10 border-white/10 bg-zinc-900 text-zinc-100 placeholder:text-zinc-600 aria-invalid:border-rose-500"
+                  maxLength={120}
+                />
+              )}
             />
             {errors.authorizedBy && (
               <span className="text-[11px] text-rose-300">
