@@ -1,0 +1,25 @@
+# Rede de seguranca para o repositorio inteiro (server/ e client/ tem os seus proprios).
+
+# Segredos: nenhum .env em nenhuma pasta (os modelos .env.example podem ir)
+.env
+.env.*
+!.env.example
+
+# Banco local (SQLite) e arquivos temporarios dele
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Relatorios gerados (podem conter dados do alvo)
+server/reports/
+
+# Sistema
+.DS_Store
+Thumbs.db
