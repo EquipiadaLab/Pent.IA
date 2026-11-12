@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -36,6 +37,7 @@ from app.report import PDF_AVAILABLE, to_markdown, to_pdf
 from app.sink import ApprovalNotPending
 
 router = APIRouter()
+logger = logging.getLogger("pentest_chess")
 
 
 def _now() -> datetime:
@@ -120,7 +122,13 @@ async def _revalidation_tests(previous_id: str, config: CampaignConfig, ctx: App
 async def create_campaign(
     body: CreateCampaignRequest, ctx: AppContext = Depends(get_ctx)
 ) -> Campaign:
-    raw_origin = (body.config.origin or "").strip() or default_target()
+    sent_origin = body.config.origin
+    raw_origin = (sent_origin or "").strip() or default_target()
+    used_default = not (sent_origin or "").strip()
+    logger.info(
+        "POST /campaigns | origin recebido do front: %r | usou DEFAULT_TARGET: %s | alvo final: %s",
+        sent_origin, used_default, raw_origin,
+    )
     config0 = body.config.model_copy(update={"origin": raw_origin})
     _preflight_scope(config0, ctx)  # 403 sincrono
     config = _enforce_server_limits(config0)
