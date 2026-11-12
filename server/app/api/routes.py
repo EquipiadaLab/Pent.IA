@@ -29,6 +29,7 @@ from app.models import (
     Move,
     Profile,
 )
+from app.authorization import default_target
 from app.comparison import failing
 from app.engine.scope import normalize_origin
 from app.report import PDF_AVAILABLE, to_markdown, to_pdf
@@ -119,8 +120,10 @@ async def _revalidation_tests(previous_id: str, config: CampaignConfig, ctx: App
 async def create_campaign(
     body: CreateCampaignRequest, ctx: AppContext = Depends(get_ctx)
 ) -> Campaign:
-    _preflight_scope(body.config, ctx)  # 403 sincrono
-    config = _enforce_server_limits(body.config)
+    raw_origin = (body.config.origin or "").strip() or default_target()
+    config0 = body.config.model_copy(update={"origin": raw_origin})
+    _preflight_scope(config0, ctx)  # 403 sincrono
+    config = _enforce_server_limits(config0)
     if body.revalidate_from:
         config = config.model_copy(
             update={"only_tests": await _revalidation_tests(body.revalidate_from, config, ctx)}
