@@ -6,3 +6,6 @@ __pycache__/
 .pytest_cache/
 .venv/
 reports/
+*.db-shm
+*.db-wal
+*.db-journal
