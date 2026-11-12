@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -29,13 +30,14 @@ from app.models import (
     Move,
     Profile,
 )
-from app.authorization import default_target
+from app.authorization import default_target, locked_target
 from app.comparison import failing
 from app.engine.scope import normalize_origin
 from app.report import PDF_AVAILABLE, to_markdown, to_pdf
 from app.sink import ApprovalNotPending
 
 router = APIRouter()
+logger = logging.getLogger("pentest_chess")
 
 
 def _now() -> datetime:
@@ -120,7 +122,18 @@ async def _revalidation_tests(previous_id: str, config: CampaignConfig, ctx: App
 async def create_campaign(
     body: CreateCampaignRequest, ctx: AppContext = Depends(get_ctx)
 ) -> Campaign:
-    raw_origin = (body.config.origin or "").strip() or default_target()
+    sent_origin = (body.config.origin or "").strip()
+    locked = locked_target()
+    if locked:  # alvo travado: ignora o que o front manda; so o alvo travado vale
+        if sent_origin and normalize_origin(sent_origin) != normalize_origin(locked):
+            raise HTTPException(status_code=403, detail=f"Alvo travado: este sistema so testa {locked}.")
+        raw_origin = locked
+    else:
+        raw_origin = sent_origin or default_target()
+    logger.info(
+        "POST /campaigns | origin do front: %r | travado: %s | alvo final: %s",
+        body.config.origin, bool(locked), raw_origin,
+    )
     config0 = body.config.model_copy(update={"origin": raw_origin})
     _preflight_scope(config0, ctx)  # 403 sincrono
     config = _enforce_server_limits(config0)

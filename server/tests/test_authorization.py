@@ -5,6 +5,22 @@ import pytest
 from app.authorization import authorization_error, default_target, is_authorized
 
 
+def test_locked_target_only_allows_that_target(monkeypatch):
+    monkeypatch.setenv("LOCKED_TARGET", "https://3.migbot.com.br")
+    assert is_authorized("https://3.migbot.com.br")
+    assert is_authorized("https://3.migbot.com.br/qualquer/caminho")  # mesma origem
+    assert not is_authorized("https://outro.com")
+    assert not is_authorized("http://127.0.0.1:8080")  # ate localhost e recusado
+    assert "travado" in (authorization_error("https://outro.com") or "")
+
+
+def test_locked_target_wins_over_authorized_list(monkeypatch):
+    monkeypatch.setenv("LOCKED_TARGET", "https://3.migbot.com.br")
+    monkeypatch.setenv("AUTHORIZED_TARGETS", "https://outro.com")
+    assert is_authorized("https://3.migbot.com.br")
+    assert not is_authorized("https://outro.com")
+
+
 def test_strict_mode_only_allows_listed(monkeypatch):
     monkeypatch.setenv("AUTHORIZED_TARGETS", "https://alvo.com")
     assert is_authorized("https://alvo.com/x")

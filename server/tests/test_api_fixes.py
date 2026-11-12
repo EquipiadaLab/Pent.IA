@@ -43,6 +43,18 @@ def _create(c, origin, **extra):
     return r.json()
 
 
+def test_locked_target_overrides_and_refuses_others(client, lab, monkeypatch):
+    monkeypatch.setenv("LOCKED_TARGET", lab)  # trava no alvo de treino (alcancavel)
+    # front manda outro endereco -> 403, mesmo sendo uma URL valida
+    r = client.post("/campaigns", json={"config": {"origin": "https://outro.com",
+                                                   "authorized_by": "x", "authorized_at": NOW}})
+    assert r.status_code == 403 and "travado" in r.json()["detail"].lower()
+    # front manda vazio -> usa o alvo travado
+    r2 = client.post("/campaigns", json={"config": {"authorized_by": "x", "authorized_at": NOW}})
+    assert r2.status_code == 201 and r2.json()["config"]["origin"] == lab
+    client.post(f"/campaigns/{r2.json()['id']}/stop")
+
+
 def _wait(c, cid, approve=True, timeout=30):
     end = time.time() + timeout
     while time.time() < end:

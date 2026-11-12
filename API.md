@@ -140,7 +140,7 @@ Campos extras opcionais (aditivos):
 
 | Campo | Obrigatório | Comportamento na tela |
 |---|---|---|
-| `origin` | **não** | Input "Site a testar". Deve começar com `http://` ou `https://`. **Se vier vazio/omitido, o servidor usa o `DEFAULT_TARGET`** (veja `GET /scope`). A aplicação aceita **qualquer URL pública**; redes internas/privadas são recusadas |
+| `origin` | **não** | Input "Site a testar". **Com `locked_target` ativo (ver `/scope`), o servidor ignora o que o front manda e sempre usa o alvo travado** (outra URL → 403). Sem trava: vazio usa `DEFAULT_TARGET`; aceita qualquer URL pública (redes internas/privadas recusadas) |
 | `authorized_by` | sim | Input "Quem autorizou" (fica na auditoria — accountability) |
 | `authorized_at` | sim | **Não pedir ao usuário**: envie `new Date().toISOString()` |
 | `extra_origins` | não | Ex.: versão `http://` do site, para o teste de redirecionamento |
@@ -286,8 +286,9 @@ Agrupe por `phase` (Abertura / Meio-jogo / Final) e marque com um cadeado os que
 O que o **servidor** permite. Use na tela de configuração (item 2 do desafio).
 ```json
 {
-  "authorized_targets": [],
-  "accepts_any_target": true,
+  "locked_target": "https://3.migbot.com.br",
+  "authorized_targets": ["https://3.migbot.com.br:443"],
+  "accepts_any_target": false,
   "default_target": "https://3.migbot.com.br",
   "blocks_private_targets": true,
   "allowed_methods": ["GET", "OPTIONS"],
@@ -299,7 +300,8 @@ O que o **servidor** permite. Use na tela de configuração (item 2 do desafio).
 ```
 | Campo | Comportamento |
 |---|---|
-| `accepts_any_target` | `true` = modo aberto: o input "Site a testar" é livre. `false` = use `authorized_targets` como **lista de escolha** |
+| `locked_target` | Se preenchido, o sistema **só testa esse endereço**. Esconda o campo de URL e mostre "Alvo: {locked_target}" fixo. Qualquer outra URL enviada dá **403** |
+| `accepts_any_target` | `true` = modo aberto: o input "Site a testar" é livre. `false` = travado ou lista fixa |
 | `default_target` | O que o servidor usa se o `origin` vier vazio. Mostre como placeholder do input |
 | `blocks_private_targets` | `true` = redes internas/privadas são sempre recusadas (anti-SSRF). Avise se o usuário digitar um IP interno |
 | `authorized_targets` | Só no modo lista fixa: os únicos alvos aceitos |
@@ -716,7 +718,7 @@ export interface CatalogTest {
   owasp_top10: string; needs_approval: boolean; hypothesis: string; expected: string; impact: string;
 }
 export interface ScopeResponse {
-  authorized_targets: string[]; accepts_any_target: boolean; default_target: string | null;
+  locked_target: string | null; authorized_targets: string[]; accepts_any_target: boolean; default_target: string | null;
   blocks_private_targets: boolean; allowed_methods: string[];
   allowed_profiles: Profile[]; blocked_profiles: Profile[];
   limits: { max_requests_per_second: number; max_total_requests: number; request_timeout_s: number };
