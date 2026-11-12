@@ -91,7 +91,8 @@ def sanitize_headers(headers: dict[str, str]) -> dict[str, str]:
         if k not in SAFE_HEADERS:
             continue
         if k == "set-cookie":
-            value = mask_set_cookie(value)
+            # varios Set-Cookie chegam unidos por "\n": mascara cada um
+            value = "\n".join(mask_set_cookie(line) for line in value.split("\n"))
         elif k == "location":
             value = sanitize_url(value)
         out[k] = (scrub_text(value) or "")[:MAX_HEADER_VALUE]
