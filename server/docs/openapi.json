@@ -486,6 +486,127 @@
         }
       }
     },
+    "/status": {
+      "get": {
+        "summary": "Status",
+        "operationId": "status_status_get",
+        "parameters": [
+          {
+            "name": "check_llm",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Faz uma chamada curta ao Bedrock (cache de 60 s)",
+              "default": false,
+              "title": "Check Llm"
+            },
+            "description": "Faz uma chamada curta ao Bedrock (cache de 60 s)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/catalog": {
+      "get": {
+        "summary": "Catalog",
+        "operationId": "catalog_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CatalogTest"
+                  },
+                  "type": "array",
+                  "title": "Response Catalog Catalog Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/scope": {
+      "get": {
+        "summary": "Scope",
+        "operationId": "scope_scope_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{campaign_id}/status": {
+      "get": {
+        "summary": "Campaign Status",
+        "operationId": "campaign_status_campaigns__campaign_id__status_get",
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -831,6 +952,161 @@
         ],
         "title": "CampaignState"
       },
+      "CampaignStatusResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "state": {
+            "$ref": "#/components/schemas/CampaignState"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin"
+          },
+          "unattended": {
+            "type": "boolean",
+            "title": "Unattended"
+          },
+          "progress": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Progress"
+          },
+          "current_move": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CurrentMove"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_approvals": {
+            "items": {
+              "$ref": "#/components/schemas/PendingApproval"
+            },
+            "type": "array",
+            "title": "Pending Approvals"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Score"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_seq": {
+            "type": "integer",
+            "title": "Last Seq",
+            "description": "Use como 'since' no WebSocket/polling"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "elapsed_s": {
+            "type": "integer",
+            "title": "Elapsed S"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "state",
+          "origin",
+          "unattended",
+          "progress",
+          "current_move",
+          "pending_approvals",
+          "score",
+          "last_seq",
+          "created_at",
+          "finished_at",
+          "elapsed_s"
+        ],
+        "title": "CampaignStatusResponse"
+      },
+      "CatalogTest": {
+        "properties": {
+          "test_id": {
+            "type": "string",
+            "title": "Test Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/Phase"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/Profile"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/Severity"
+          },
+          "wstg": {
+            "type": "string",
+            "title": "Wstg"
+          },
+          "owasp_top10": {
+            "type": "string",
+            "title": "Owasp Top10"
+          },
+          "needs_approval": {
+            "type": "boolean",
+            "title": "Needs Approval"
+          },
+          "hypothesis": {
+            "type": "string",
+            "title": "Hypothesis"
+          },
+          "expected": {
+            "type": "string",
+            "title": "Expected"
+          },
+          "impact": {
+            "type": "string",
+            "title": "Impact"
+          }
+        },
+        "type": "object",
+        "required": [
+          "test_id",
+          "title",
+          "phase",
+          "profile",
+          "severity",
+          "wstg",
+          "owasp_top10",
+          "needs_approval",
+          "hypothesis",
+          "expected",
+          "impact"
+        ],
+        "title": "CatalogTest"
+      },
       "Comparison": {
         "properties": {
           "previous_campaign_id": {
@@ -888,6 +1164,48 @@
         "title": "Comparison",
         "description": "Comparacao com a partida anterior do mesmo alvo (validacao continua)."
       },
+      "ComponentStatus": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded",
+              "error",
+              "disabled",
+              "unchecked"
+            ],
+            "title": "Status"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ComponentStatus"
+      },
       "Confidence": {
         "type": "string",
         "enum": [
@@ -919,6 +1237,38 @@
           "config"
         ],
         "title": "CreateCampaignRequest"
+      },
+      "CurrentMove": {
+        "properties": {
+          "move": {
+            "type": "integer",
+            "title": "Move"
+          },
+          "test_id": {
+            "type": "string",
+            "title": "Test Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "awaiting_approval",
+              "running"
+            ],
+            "title": "Stage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "move",
+          "test_id",
+          "title",
+          "stage"
+        ],
+        "title": "CurrentMove"
       },
       "Event": {
         "properties": {
@@ -1468,6 +1818,40 @@
         "title": "MovePlan",
         "description": "Item 3 do desafio: registrado ANTES de executar o lance."
       },
+      "PendingApproval": {
+        "properties": {
+          "move": {
+            "type": "integer",
+            "title": "Move"
+          },
+          "test_id": {
+            "type": "string",
+            "title": "Test Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "hypothesis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hypothesis"
+          }
+        },
+        "type": "object",
+        "required": [
+          "move",
+          "test_id",
+          "title"
+        ],
+        "title": "PendingApproval"
+      },
       "Phase": {
         "type": "string",
         "enum": [
@@ -1476,6 +1860,55 @@
           "endgame"
         ],
         "title": "Phase"
+      },
+      "PreapprovalInfo": {
+        "properties": {
+          "tests": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tests"
+          },
+          "approved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved By"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          },
+          "active": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active",
+            "description": "Testes com pre-aprovacao VALIDA agora"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tests",
+          "approved_by",
+          "valid_until",
+          "active"
+        ],
+        "title": "PreapprovalInfo"
       },
       "Profile": {
         "type": "string",
@@ -1486,6 +1919,64 @@
         ],
         "title": "Profile",
         "description": "Perfil de intrusividade do teste. ``intrusive`` e bloqueado por padrao."
+      },
+      "ScopeResponse": {
+        "properties": {
+          "authorized_targets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Authorized Targets"
+          },
+          "local_only": {
+            "type": "boolean",
+            "title": "Local Only",
+            "description": "True = sem AUTHORIZED_TARGETS; so 127.0.0.1/localhost"
+          },
+          "allowed_methods": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Methods"
+          },
+          "allowed_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/Profile"
+            },
+            "type": "array",
+            "title": "Allowed Profiles"
+          },
+          "blocked_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/Profile"
+            },
+            "type": "array",
+            "title": "Blocked Profiles"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Limits"
+          },
+          "preapproval": {
+            "$ref": "#/components/schemas/PreapprovalInfo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authorized_targets",
+          "local_only",
+          "allowed_methods",
+          "allowed_profiles",
+          "blocked_profiles",
+          "limits",
+          "preapproval"
+        ],
+        "title": "ScopeResponse"
       },
       "Score": {
         "properties": {
@@ -1539,6 +2030,88 @@
           "inconclusive"
         ],
         "title": "Status"
+      },
+      "StatusResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Time"
+          },
+          "uptime_s": {
+            "type": "integer",
+            "title": "Uptime S"
+          },
+          "engine_mode": {
+            "type": "string",
+            "enum": [
+              "real",
+              "sample"
+            ],
+            "title": "Engine Mode"
+          },
+          "planner": {
+            "type": "string",
+            "enum": [
+              "ai",
+              "rules"
+            ],
+            "title": "Planner"
+          },
+          "models": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Models"
+          },
+          "components": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ComponentStatus"
+            },
+            "type": "object",
+            "title": "Components"
+          },
+          "campaigns": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Campaigns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "version",
+          "time",
+          "uptime_s",
+          "engine_mode",
+          "planner",
+          "models",
+          "components",
+          "campaigns"
+        ],
+        "title": "StatusResponse"
       },
       "TimelineEntry": {
         "properties": {

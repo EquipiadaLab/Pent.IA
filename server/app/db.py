@@ -278,6 +278,25 @@ class Database:
 
         await self._run(_do)
 
+    # ---- status (leve) ---------------------------------------------------
+    async def ping(self) -> dict[str, int]:
+        """Checa o banco e conta campanhas por estado (sem carregar lances)."""
+
+        def _do(conn: sqlite3.Connection) -> dict[str, int]:
+            rows = conn.execute("SELECT state, COUNT(*) AS n FROM campaigns GROUP BY state").fetchall()
+            return {r["state"]: r["n"] for r in rows}
+
+        return await self._run(_do)
+
+    async def last_seq(self, campaign_id: str) -> int:
+        def _do(conn: sqlite3.Connection) -> int:
+            row = conn.execute(
+                "SELECT MAX(seq) AS s FROM events WHERE campaign_id = ?", (campaign_id,)
+            ).fetchone()
+            return int(row["s"] or 0)
+
+        return await self._run(_do)
+
     async def list_audit(self, campaign_id: str) -> list[AuditEntry]:
         def _do(conn: sqlite3.Connection) -> list[AuditEntry]:
             rows = conn.execute(

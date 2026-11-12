@@ -77,6 +77,10 @@ Os títulos dos testes passaram a ser neutros (ex.: "Exposicao do repositorio .g
 | 11 | GET | `/campaigns/{id}/report/export?format=md` | Botão **Baixar relatório** | 200 `text/markdown` |
 | 12 | **WS** | `/campaigns/{id}/ws?since=N` | **Ao vivo por WebSocket** (recomendado) | stream de `Event` |
 | 13 | GET | `/campaigns/{id}/audit` | **Trilha de auditoria** cronológica (item 8) | 200 `TimelineEntry[]` |
+| 14 | GET | `/status` | **Painel "sistema no ar"**: API, banco, motor e IA | 200 `StatusResponse` |
+| 15 | GET | `/catalog` | Os 14 testes que o agente pode jogar (o "tabuleiro") | 200 `CatalogTest[]` |
+| 16 | GET | `/scope` | Regras de engajamento do servidor (alvos autorizados, limites, pré-aprovação) | 200 `ScopeResponse` |
+| 17 | GET | `/campaigns/{id}/status` | Progresso resumido da partida (barra de progresso, pendências) | 200 `CampaignStatusResponse` |
 
 Não há endpoint separado de auditoria: ela vem em `GET /report` → `audit`.
 
@@ -105,6 +109,7 @@ Sempre `{"detail": "mensagem"}` (padrão FastAPI). Mostre a mensagem como texto.
 - `engine`: `real` = motor de verdade; `sample` = dados de exemplo (mostre um aviso).
 - `llm`: `bedrock` = treinador/juiz/resumo pela IA; `template` = textos automáticos.
 - `planner`: `ai` = **a IA decide cada lance**; `rules` = ordem padrão do catálogo.
+- Use o `/health` para um "ping" rápido (ex.: bolinha verde no topo). Para o detalhe, use o `/status` (2.10).
 
 ### 2.2 `POST /campaigns` — iniciar partida
 
@@ -218,6 +223,97 @@ requisição (comando), bloqueios, resultados e parada.
 ]
 ```
 `kind`: `campaign` · `decision` · `approval_requested` · `approval` · `command` · `blocked` · `result` · `stop`.
+
+### 2.10 `GET /status` — o sistema está rodando?
+Saúde detalhada. **Rápido** por padrão (não chama a IA).
+`?check_llm=true` faz uma chamada curta ao Bedrock para provar que a IA responde (resultado guardado por 60 s).
+```json
+{
+  "status": "ok",
+  "version": "0.2.0",
+  "time": "2026-11-12T18:22:33Z",
+  "uptime_s": 120,
+  "engine_mode": "real",
+  "planner": "ai",
+  "models": { "coach_judge_summary": "us.anthropic.claude-sonnet-5-5", "planner": "us.anthropic.claude-haiku-5-5" },
+  "components": {
+    "api":      { "status": "ok",  "detail": null, "latency_ms": null },
+    "database": { "status": "ok",  "detail": null, "latency_ms": 0 },
+    "engine":   { "status": "ok",  "detail": "14 testes no catalogo", "latency_ms": null },
+    "llm":      { "status": "ok",  "detail": "Bedrock respondeu", "latency_ms": 1553 }
+  },
+  "campaigns": { "total": 3, "created": 0, "running": 1, "waiting_approval": 0, "stopped": 0, "finished": 2, "failed": 0 }
+}
+```
+| Campo | Comportamento na tela |
+|---|---|
+| `status` | `ok` = verde; `degraded` = amarelo ("funcionando com limitações") |
+| `components.*.status` | `ok` verde · `degraded` amarelo · `error` vermelho · `disabled` cinza (IA desligada) · `unchecked` cinza ("clique para testar a IA") |
+| `components.llm` | Se `error` com "credenciais expiradas?", avise: *"A IA está indisponível. As partidas continuam só com regras."* |
+| `planner` | Selo "Agente com IA" (`ai`) ou "Modo regras" (`rules`) |
+| `campaigns` | Contadores do painel (ex.: "1 partida em andamento") |
+
+Sugestão: chame `/status` ao abrir o app; ofereça um botão **"Testar IA"** que chama `/status?check_llm=true`.
+
+### 2.11 `GET /catalog` — o tabuleiro
+Lista fixa dos testes (útil para mostrar **antes** da partida o que pode ser jogado, e para a legenda).
+```json
+[
+  {
+    "test_id": "FILE-001", "title": "Exposicao do repositorio .git", "phase": "endgame",
+    "profile": "active_light", "severity": "high", "wstg": "WSTG-CONF-04", "owasp_top10": "A02:2025",
+    "needs_approval": true,
+    "hypothesis": "A pasta .git pode ter sido publicada junto com o site.",
+    "expected": "/.git/HEAD nao acessivel (404/403).",
+    "impact": "Com o .git exposto, o codigo-fonte e o historico (as vezes com senhas) podem ser baixados."
+  }
+]
+```
+Agrupe por `phase` (Abertura / Meio-jogo / Final) e marque com um cadeado os que têm `needs_approval`.
+
+### 2.12 `GET /scope` — regras de engajamento
+O que o **servidor** permite. Use na tela de configuração (item 2 do desafio).
+```json
+{
+  "authorized_targets": ["https://alvo-autorizado.com:443"],
+  "local_only": false,
+  "allowed_methods": ["GET", "OPTIONS"],
+  "allowed_profiles": ["active_light", "passive"],
+  "blocked_profiles": ["intrusive"],
+  "limits": { "max_requests_per_second": 5.0, "max_total_requests": 500, "request_timeout_s": 30.0 },
+  "preapproval": { "tests": ["FILE-001", "ERR-001"], "approved_by": "Maria", "valid_until": "2026-11-30", "active": ["FILE-001", "ERR-001"] }
+}
+```
+| Campo | Comportamento |
+|---|---|
+| `authorized_targets` | Mostre como **lista de escolha** do campo "Site autorizado" (evita digitar errado) |
+| `local_only` | `true` → só o site de treino local é aceito; mostre um aviso |
+| `allowed_methods` / `blocked_profiles` | Texto fixo "Somente leitura (GET/OPTIONS) · Testes intrusivos bloqueados" |
+| `limits` | "Até 5 requisições/s · máximo 500 por partida" |
+| `preapproval` | Para execução automática: quais testes sensíveis rodam sem humano, quem autorizou e até quando. `active` = válidos agora |
+
+### 2.13 `GET /campaigns/{id}/status` — progresso da partida
+Resumo leve para o cabeçalho da partida (barra de progresso, "aguardando você").
+```json
+{
+  "id": "dded14...", "state": "waiting_approval", "origin": "http://127.0.0.1:8080", "unattended": false,
+  "progress": { "played": 10, "total": 14, "percent": 71 },
+  "current_move": { "move": 11, "test_id": "FILE-002", "title": "Exposicao do arquivo .env", "stage": "awaiting_approval" },
+  "pending_approvals": [ { "move": 11, "test_id": "FILE-002", "title": "Exposicao do arquivo .env", "hypothesis": "O arquivo .env pode estar acessivel publicamente." } ],
+  "score": { "accuracy": 22.0, "eval_bar": -56.0, "counts": { "blunder": 2, "mistake": 5 } },
+  "last_seq": 47,
+  "created_at": "2026-11-12T18:12:50Z", "finished_at": null, "elapsed_s": 41
+}
+```
+| Campo | Comportamento |
+|---|---|
+| `progress` | Barra "Lance 10 de 14". Em revalidação, `total` = só os testes revalidados |
+| `current_move.stage` | `running` → "A IA está jogando: {title}"; `awaiting_approval` → destaque amarelo |
+| `pending_approvals` | Badge com a quantidade + atalho para o card; mostre a `hypothesis` |
+| `last_seq` | Ao reabrir a página, conecte o WebSocket com `?since=last_seq` e carregue o resto por `GET /campaigns/{id}` |
+| `elapsed_s` | Cronômetro da partida |
+
+O ao vivo continua sendo pelo WebSocket; este endpoint é para **reabrir a tela**, listas e o n8n.
 
 ### 2.8 `GET /campaigns/{id}/report/export?format=md`
 Baixa um arquivo `.md` (`Content-Disposition: attachment`). Use um link/`fetch` + download.
@@ -592,6 +688,31 @@ export interface TimelineEntry {
   move: number | null; summary: string; details: Record<string, unknown>;
 }
 export interface ApprovalResponse { campaign_id: string; move: number; approval: Approval; }
+export interface ComponentStatus { status: "ok" | "degraded" | "error" | "disabled" | "unchecked"; detail: string | null; latency_ms: number | null; }
+export interface StatusResponse {
+  status: "ok" | "degraded"; version: string; time: string; uptime_s: number;
+  engine_mode: "real" | "sample"; planner: "ai" | "rules";
+  models: { coach_judge_summary: string | null; planner: string | null };
+  components: { api: ComponentStatus; database: ComponentStatus; engine: ComponentStatus; llm: ComponentStatus };
+  campaigns: Record<"total" | CampaignState, number>;
+}
+export interface CatalogTest {
+  test_id: string; title: string; phase: Phase; profile: Profile; severity: Severity; wstg: string;
+  owasp_top10: string; needs_approval: boolean; hypothesis: string; expected: string; impact: string;
+}
+export interface ScopeResponse {
+  authorized_targets: string[]; local_only: boolean; allowed_methods: string[];
+  allowed_profiles: Profile[]; blocked_profiles: Profile[];
+  limits: { max_requests_per_second: number; max_total_requests: number; request_timeout_s: number };
+  preapproval: { tests: string[]; approved_by: string | null; valid_until: string | null; active: string[] };
+}
+export interface CampaignStatusResponse {
+  id: string; state: CampaignState; origin: string; unattended: boolean;
+  progress: { played: number; total: number; percent: number };
+  current_move: { move: number; test_id: string; title: string; stage: "awaiting_approval" | "running" } | null;
+  pending_approvals: { move: number; test_id: string; title: string; hypothesis: string | null }[];
+  score: Score | null; last_seq: number; created_at: string; finished_at: string | null; elapsed_s: number;
+}
 export interface CreateCampaignBody {
   config: Pick<CampaignConfig, "origin" | "authorized_by" | "authorized_at">
     & Partial<Pick<CampaignConfig, "extra_origins" | "included_paths" | "excluded_paths" | "window_start" | "window_end" | "unattended">>;
