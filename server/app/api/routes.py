@@ -29,6 +29,8 @@ from app.models import (
     Move,
     Profile,
 )
+from app.comparison import failing
+from app.engine.scope import normalize_origin
 from app.report import PDF_AVAILABLE, to_markdown, to_pdf
 from app.sink import ApprovalNotPending
 
@@ -41,6 +43,8 @@ def _now() -> datetime:
 
 class CreateCampaignRequest(BaseModel):
     config: CampaignConfig
+    # Revalidacao: id de uma partida anterior do MESMO alvo; joga so o que falhou nela.
+    revalidate_from: str | None = None
 
 
 class ApprovalResponse(BaseModel):
@@ -94,8 +98,21 @@ def _enforce_server_limits(config: CampaignConfig) -> CampaignConfig:
             "max_total_requests": min(max(config.max_total_requests, 1), _MAX_TOTAL),
             "request_timeout_s": min(max(config.request_timeout_s, 1.0), _MAX_TIMEOUT_S),
             "authorized_at": config.authorized_at or _now(),
+            "only_tests": None,  # so o servidor define (via revalidate_from)
         }
     )
+
+
+async def _revalidation_tests(previous_id: str, config: CampaignConfig, ctx: AppContext) -> list[str]:
+    previous = await ctx.db.get_campaign(previous_id)
+    if previous is None:
+        raise HTTPException(status_code=404, detail="Partida anterior nao encontrada.")
+    if normalize_origin(previous.config.origin) != normalize_origin(config.origin):
+        raise HTTPException(status_code=422, detail="A revalidacao precisa ser no mesmo alvo da partida anterior.")
+    tests = sorted(failing(previous))
+    if not tests:
+        raise HTTPException(status_code=409, detail="A partida anterior nao tem achados para revalidar.")
+    return tests
 
 
 @router.post("/campaigns", response_model=Campaign, status_code=201)
@@ -104,6 +121,10 @@ async def create_campaign(
 ) -> Campaign:
     _preflight_scope(body.config, ctx)  # 403 sincrono
     config = _enforce_server_limits(body.config)
+    if body.revalidate_from:
+        config = config.model_copy(
+            update={"only_tests": await _revalidation_tests(body.revalidate_from, config, ctx)}
+        )
     campaign = Campaign(
         id=uuid.uuid4().hex,
         config=config,

@@ -443,6 +443,49 @@
         }
       }
     },
+    "/campaigns/{campaign_id}/audit": {
+      "get": {
+        "summary": "Campaign Timeline",
+        "operationId": "campaign_timeline_campaigns__campaign_id__audit_get",
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TimelineEntry"
+                  },
+                  "title": "Response Campaign Timeline Campaigns  Campaign Id  Audit Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -466,6 +509,31 @@
   },
   "components": {
     "schemas": {
+      "AIReview": {
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Verdict"
+          },
+          "issues": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Issues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict"
+        ],
+        "title": "AIReview",
+        "description": "Parecer do 'juiz' (IA revisora) sobre o comentario da IA."
+      },
       "Approval": {
         "type": "string",
         "enum": [
@@ -720,6 +788,27 @@
             "format": "date-time",
             "title": "Authorized At",
             "description": "Quando foi autorizado"
+          },
+          "unattended": {
+            "type": "boolean",
+            "title": "Unattended",
+            "description": "Execucao automatica (ex.: diaria): testes sensiveis so rodam se houver pre-aprovacao no SERVIDOR; sem ela, sao negados sem esperar humano.",
+            "default": false
+          },
+          "only_tests": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Only Tests",
+            "description": "Revalidacao: joga so estes test_ids (definido pelo servidor)."
           }
         },
         "type": "object",
@@ -742,6 +831,63 @@
         ],
         "title": "CampaignState"
       },
+      "Comparison": {
+        "properties": {
+          "previous_campaign_id": {
+            "type": "string",
+            "title": "Previous Campaign Id"
+          },
+          "previous_accuracy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Accuracy"
+          },
+          "accuracy_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accuracy Delta"
+          },
+          "fixed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Fixed"
+          },
+          "new": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "New"
+          },
+          "still_failing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Still Failing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "previous_campaign_id"
+        ],
+        "title": "Comparison",
+        "description": "Comparacao com a partida anterior do mesmo alvo (validacao continua)."
+      },
       "Confidence": {
         "type": "string",
         "enum": [
@@ -755,6 +901,17 @@
         "properties": {
           "config": {
             "$ref": "#/components/schemas/CampaignConfig"
+          },
+          "revalidate_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revalidate From"
           }
         },
         "type": "object",
@@ -882,6 +1039,59 @@
         "title": "Evidence",
         "description": "Evidencia bruta. Segredos/cookies DEVEM chegar aqui ja mascarados."
       },
+      "ExecutiveSummary": {
+        "properties": {
+          "headline": {
+            "type": "string",
+            "title": "Headline"
+          },
+          "risk_level": {
+            "type": "string",
+            "enum": [
+              "critico",
+              "alto",
+              "medio",
+              "baixo"
+            ],
+            "title": "Risk Level"
+          },
+          "plain_language": {
+            "type": "string",
+            "title": "Plain Language"
+          },
+          "top_risks": {
+            "items": {
+              "$ref": "#/components/schemas/TopRisk"
+            },
+            "type": "array",
+            "title": "Top Risks"
+          },
+          "next_steps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Next Steps"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ai",
+              "rules"
+            ],
+            "title": "Source",
+            "default": "rules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "headline",
+          "risk_level",
+          "plain_language"
+        ],
+        "title": "ExecutiveSummary",
+        "description": "Resumo executivo estruturado (JSON) para a tela."
+      },
       "GameReview": {
         "properties": {
           "campaign": {
@@ -911,6 +1121,26 @@
             },
             "type": "array",
             "title": "Audit"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutiveSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparison": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Comparison"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1094,6 +1324,54 @@
             ],
             "title": "Recommendation"
           },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MovePlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verdict": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Verdict"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "impact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impact"
+          },
+          "reproduce": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reproduce"
+          },
+          "ai_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AIReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "started_at": {
             "anyOf": [
               {
@@ -1128,6 +1406,67 @@
           "profile"
         ],
         "title": "Move"
+      },
+      "MovePlan": {
+        "properties": {
+          "hypothesis": {
+            "type": "string",
+            "title": "Hypothesis"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "expected_result": {
+            "type": "string",
+            "title": "Expected Result"
+          },
+          "stop_condition": {
+            "type": "string",
+            "title": "Stop Condition"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ai",
+              "rules"
+            ],
+            "title": "Source",
+            "default": "rules"
+          },
+          "planned_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hypothesis",
+          "action",
+          "expected_result",
+          "stop_condition"
+        ],
+        "title": "MovePlan",
+        "description": "Item 3 do desafio: registrado ANTES de executar o lance."
       },
       "Phase": {
         "type": "string",
@@ -1201,6 +1540,81 @@
         ],
         "title": "Status"
       },
+      "TimelineEntry": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "campaign",
+              "decision",
+              "approval_requested",
+              "approval",
+              "command",
+              "blocked",
+              "result",
+              "score",
+              "stop"
+            ],
+            "title": "Kind"
+          },
+          "move": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "kind",
+          "summary"
+        ],
+        "title": "TimelineEntry",
+        "description": "Item 8: registro cronologico unico de hipoteses, decisoes, aprovacoes, comandos e resultados."
+      },
+      "TopRisk": {
+        "properties": {
+          "move": {
+            "type": "integer",
+            "title": "Move"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "why": {
+            "type": "string",
+            "title": "Why"
+          }
+        },
+        "type": "object",
+        "required": [
+          "move",
+          "title",
+          "why"
+        ],
+        "title": "TopRisk"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -1240,6 +1654,16 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "Verdict": {
+        "type": "string",
+        "enum": [
+          "confirmed",
+          "discarded",
+          "inconclusive"
+        ],
+        "title": "Verdict",
+        "description": "Item 5 do desafio: o achado foi reconfirmado na evidencia real?"
       }
     }
   }

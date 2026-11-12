@@ -32,6 +32,8 @@ class Settings:
     bedrock_model_id: str | None
     # Perfis bloqueados sincronamente no POST /campaigns (403 imediato).
     block_intrusive: bool = True
+    # Modelo do planejador (decide a cada lance: precisa ser rapido).
+    planner_model_id: str | None = None
 
     @property
     def llm_enabled(self) -> bool:
@@ -39,6 +41,7 @@ class Settings:
 
 
 DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-5-5"
+DEFAULT_PLANNER_MODEL_ID = "us.anthropic.claude-haiku-5-5"
 
 
 def _aws_credentials_available() -> bool:
@@ -63,6 +66,8 @@ def load_settings() -> Settings:
         ),
         aws_region=os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1",
         bedrock_model_id=None if disabled else model_id,
+        planner_model_id=None if disabled or model_id is None
+        else (os.getenv("PLANNER_MODEL_ID") or DEFAULT_PLANNER_MODEL_ID),
     )
 
 

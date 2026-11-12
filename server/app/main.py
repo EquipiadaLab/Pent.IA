@@ -6,6 +6,7 @@ senao o fake de exemplo) e expoe as rotas. CORS liberado para o frontend.
 
 from __future__ import annotations
 
+import functools
 import logging
 from contextlib import asynccontextmanager
 
@@ -13,12 +14,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import router
+from app.api.timeline import router as timeline_router
 from app.api.ws import router as ws_router
 from app.api.context import AppContext
 from app.config import cors_origins, load_settings
 from app.db import Database
 from app.interfaces import CampaignRunner
-from app.reporter import ReportBuilder, build_llm_client
+from app.reporter import BedrockLLMClient, ReportBuilder, build_llm_client
 from app.sink import Coordinator
 
 logger = logging.getLogger("pentest_chess")
@@ -46,7 +48,12 @@ def build_context() -> AppContext:
     db = Database(settings.database_path)
     coordinator = Coordinator(db)
     runner, using_real = _resolve_runner()
-    report_builder = ReportBuilder(build_llm_client(settings), db=db)
+    llm = build_llm_client(settings)
+    if using_real and settings.planner_model_id:
+        # Agente autonomo: a IA planeja cada lance (modelo rapido); o motor arbitra.
+        planner_llm = BedrockLLMClient(settings.planner_model_id, settings.aws_region)
+        runner = functools.partial(runner, llm=planner_llm)
+    report_builder = ReportBuilder(llm, db=db, judge=llm)
     return AppContext(
         settings=settings,
         db=db,
@@ -86,6 +93,7 @@ def create_app() -> FastAPI:
 
     app.include_router(router)
     app.include_router(ws_router)
+    app.include_router(timeline_router)
 
     @app.get("/health")
     async def health() -> dict[str, object]:
@@ -94,6 +102,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "engine": "real" if ctx.using_real_engine else "sample",
             "llm": "bedrock" if ctx.settings.llm_enabled else "template",
+            "planner": "ai" if ctx.using_real_engine and ctx.settings.planner_model_id else "rules",
         }
 
     return app

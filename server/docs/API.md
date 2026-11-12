@@ -24,6 +24,42 @@ npx openapi-typescript http://127.0.0.1:8000/openapi.json -o src/api/schema.d.ts
 
 ---
 
+## 0A. O agente autônomo (o que mudou e como mostrar)
+
+A IA agora **joga a partida**. O código continua como **árbitro**. Tudo chega em **JSON**.
+
+| Etapa (por lance) | Quem | Onde aparece (JSON) | Item do desafio |
+|---|---|---|---|
+| Observar o site | código (GET / passivo, no início) | trilha `/audit` (`command`) | 8 |
+| **Decidir o próximo lance** e registrar **hipótese, ação, resultado esperado, condição de parada** | **IA (planejador)** | `move.plan` no evento `move_planned` (**antes** de executar) | **3** |
+| Validar a escolha (só catálogo, escopo, aprovação) | código (árbitro) | escolha inválida → `plan.source = "rules"` com o motivo em `plan.rationale` | 2 |
+| Aprovar teste sensível | humano, ou pré-aprovação do servidor (execução automática) | `approval_requested` / `approval_resolved` (`data.actor`) | 4 |
+| Executar | código | `test_started`, trilha `command` | — |
+| **Confirmar** o achado com uma 2ª observação | código | `move.verdict`: `confirmed` / `discarded` / `inconclusive` | **5** |
+| Explicar em linguagem simples | **IA (treinador)** | `move.ai_explanation` (após `/report`) | — |
+| Revisar a explicação | **IA (juiz)** | `move.ai_review` (`approved` / `rejected` + `issues`) | 5 |
+| Resumo executivo, riscos, próximos passos | **IA** (+ nível de risco por regra) | `report.summary` | **7** |
+| Comparar com a partida anterior | código | `report.comparison` (`fixed`, `new`, `still_failing`) | contínuo |
+
+**Tempo:** com a IA planejando, a partida leva ~60–75 s (cerca de 4 s de "pensamento" por lance). Entre
+`finding_created` e o próximo `move_planned`, mostre **"A IA está analisando o tabuleiro..."**.
+O primeiro `GET /report` leva ~25 s (treinador + juiz + resumo).
+
+**No card do lance**, mostre o plano antes do resultado:
+> **Hipótese:** {plan.hypothesis} · **Esperado:** {plan.expected_result} · **Por quê:** {plan.rationale}
+> Selo: `IA` se `plan.source = "ai"`, `Regras` se `"rules"`.
+
+**No card de aprovação**, mostre a hipótese: o humano aprova sabendo **por que** a IA quer o teste.
+
+**Selo de confirmação** (`move.verdict`, só em achados `warning`/`fail`):
+`confirmed` → "Confirmado (2 observações)" · `discarded` → "Descartado: não se reproduziu" (cinza, fora do
+placar) · `inconclusive` → "Não reconfirmado".
+
+Os títulos dos testes passaram a ser neutros (ex.: "Exposicao do repositorio .git" em vez de
+"Repositorio .git exposto"): o título diz **o que foi verificado**; o resultado vem na nota.
+
+---
+
 ## 1. Endpoints
 
 | # | Método | Caminho | Uso na tela | Sucesso |
@@ -40,6 +76,7 @@ npx openapi-typescript http://127.0.0.1:8000/openapi.json -o src/api/schema.d.ts
 | 10 | GET | `/campaigns/{id}/report` | Tela **Game Review** (inclui auditoria) | 200 `GameReview` |
 | 11 | GET | `/campaigns/{id}/report/export?format=md` | Botão **Baixar relatório** | 200 `text/markdown` |
 | 12 | **WS** | `/campaigns/{id}/ws?since=N` | **Ao vivo por WebSocket** (recomendado) | stream de `Event` |
+| 13 | GET | `/campaigns/{id}/audit` | **Trilha de auditoria** cronológica (item 8) | 200 `TimelineEntry[]` |
 
 Não há endpoint separado de auditoria: ela vem em `GET /report` → `audit`.
 
@@ -63,12 +100,21 @@ Sempre `{"detail": "mensagem"}` (padrão FastAPI). Mostre a mensagem como texto.
 
 ### 2.1 `GET /health`
 ```json
-{ "status": "ok", "engine": "real", "llm": "template" }
+{ "status": "ok", "engine": "real", "llm": "bedrock", "planner": "ai" }
 ```
 - `engine`: `real` = motor de verdade; `sample` = dados de exemplo (mostre um aviso).
-- `llm`: `bedrock` = resumo escrito pela IA; `template` = resumo automático.
+- `llm`: `bedrock` = treinador/juiz/resumo pela IA; `template` = textos automáticos.
+- `planner`: `ai` = **a IA decide cada lance**; `rules` = ordem padrão do catálogo.
 
 ### 2.2 `POST /campaigns` — iniciar partida
+
+Campos extras opcionais (aditivos):
+- `config.unattended: true` → **execução automática** (ex.: n8n às 9h): testes sensíveis só rodam se
+  estiverem na **pré-aprovação do servidor**; o resto é negado sem esperar humano.
+- `revalidate_from: "<id da partida anterior>"` (fora de `config`) → **revalidação**: joga **só** os
+  testes que falharam naquela partida (mesmo alvo). Erros: 404 (não existe), 422 (outro alvo),
+  409 (nada a revalidar). A resposta mostra `config.only_tests`.
+  Botão sugerido no relatório: **"Revanche: revalidar o que falhou"**.
 **Corpo** (os campos ficam dentro de `config`):
 ```json
 {
@@ -158,6 +204,20 @@ Peça confirmação antes ("Parar a partida?").
   evidência com esse `id` (seção 4.3).
 - `key_moments.move` aponta para o número do lance: clique leva ao lance.
 - `audit`: tabela cronológica. `allowed: false` → linha vermelha com `reason`.
+
+### 2.9 `GET /campaigns/{id}/audit` — trilha de auditoria (item 8)
+Lista **cronológica** com tudo o que aconteceu: decisões e hipóteses da IA, aprovações, cada
+requisição (comando), bloqueios, resultados e parada.
+```json
+[
+  { "at": "2026-11-12T18:12:50Z", "kind": "campaign", "move": null, "summary": "Partida iniciada contra http://127.0.0.1:8080", "details": { "planner": "ai", "unattended": false } },
+  { "at": "2026-11-12T18:12:50Z", "kind": "command",  "move": null, "summary": "GET http://127.0.0.1:8080/ -> 200", "details": { "method": "GET", "allowed": true, "status_code": 200 } },
+  { "at": "2026-11-12T18:12:52Z", "kind": "decision", "move": 1,    "summary": "Lance 1: IA escolheu 'Uso de HTTPS'. Hipotese: ...", "details": { "test_id": "TLS-001", "plan": { "...": "MovePlan" } } },
+  { "at": "2026-11-12T18:12:52Z", "kind": "result",   "move": 1,    "summary": "Lance 1: Uso de HTTPS -> fail / blunder (confirmed)", "details": { "verdict": "confirmed", "evidence_ids": ["ev-1-2"] } },
+  { "at": "2026-11-12T18:13:30Z", "kind": "approval", "move": 11,   "summary": "Lance 11: aprovado por Daniel", "details": { "approval": "approved", "actor": "Daniel" } }
+]
+```
+`kind`: `campaign` · `decision` · `approval_requested` · `approval` · `command` · `blocked` · `result` · `stop`.
 
 ### 2.8 `GET /campaigns/{id}/report/export?format=md`
 Baixa um arquivo `.md` (`Content-Disposition: attachment`). Use um link/`fetch` + download.
@@ -322,6 +382,30 @@ Exemplo real:
 | `recommendation` | string \| null | "**Melhor lance**" (a correção) — mostre em bloco `<pre>`/`<code>` com botão copiar |
 | `started_at` / `finished_at` | ISO 8601 \| null | Duração do lance |
 
+#### Campos do agente autônomo (no `Move`)
+```json
+"plan": {
+  "hypothesis": "O site pode estar servindo o cookie de sessao 'sid' sem criptografia, pois o esquema observado e http.",
+  "action": "Verificar se o site responde por HTTPS e se o acesso em http:// ocorre sem criptografia.",
+  "expected_result": "Um site seguro ofereceria HTTPS funcional e nao manteria o acesso em texto puro.",
+  "stop_condition": "Encerrar se nao houver resposta ou se o alvo estiver fora do escopo autorizado.",
+  "rationale": "O alvo foi observado em http e ha cookie de sessao, por isso o transporte e a prioridade.",
+  "source": "ai",
+  "planned_at": "2026-11-12T18:12:52Z"
+},
+"verdict": "confirmed",
+"impact": "Sem HTTPS, qualquer pessoa na mesma rede le ou altera senhas, cookies e dados em transito.",
+"reproduce": ["curl -i \"http://127.0.0.1:8080/.git/HEAD\""],
+"ai_review": { "verdict": "approved", "issues": [] }
+```
+| Campo | Comportamento |
+|---|---|
+| `plan` | Vem **no `move_planned`, antes do resultado**. Mostre hipótese/esperado/porquê. `source`: `ai` ou `rules` |
+| `verdict` | Só em achados. Selo Confirmado / Descartado / Não reconfirmado. `discarded` → nota vira `inconclusive` e sai do placar |
+| `impact` | "O que pode acontecer" — mostre em achados `warning`/`fail` |
+| `reproduce` | Lista de comandos `curl` — bloco de código com botão copiar ("Como reproduzir") |
+| `ai_review` | `approved` → mostrar `ai_explanation` com selo "revisado pelo juiz". `rejected` → `ai_explanation` vem `null`; opcionalmente mostre "comentário da IA reprovado" + `issues` |
+
 ### 4.3 `Evidence`
 ```json
 {
@@ -398,7 +482,10 @@ Guarde o histórico de `eval_bar` de cada `score_updated` para um **gráfico de 
 | 5. Achados | Painel do lance (nota, severidade, confiança, evidência) | `Move` |
 | 6. Interrupção | Botão vermelho fixo | `POST /stop` |
 | 7. Relatório | Game Review + download | `GET /report`, `/report/export` |
-| 8. Auditoria | Tabela cronológica | `GET /report` → `audit` |
+| 3. Plano do agente | Hipótese/esperado/parada no card, **antes** do resultado | `move.plan` (`move_planned`) |
+| 5. Confirmados/descartados | Selo de veredito + impacto + confiança | `move.verdict`, `impact`, `confidence` |
+| 7. Relatório (completo) | Resumo estruturado, riscos, próximos passos, reprodução, comparação | `report.summary`, `move.reproduce`, `report.comparison` |
+| 8. Auditoria | Tabela cronológica completa | `GET /campaigns/{id}/audit` |
 
 ---
 
@@ -458,7 +545,14 @@ export interface Move {
   wstg: string | null; owasp_top10: string | null; approval: Approval;
   status: Status | null; severity: Severity; grade: Grade | null; confidence: Confidence | null;
   evidence: Evidence[]; explanation: string | null; ai_explanation: string | null; recommendation: string | null;
+  plan: MovePlan | null; verdict: Verdict | null; impact: string | null; reproduce: string[];
+  ai_review: { verdict: "approved" | "rejected"; issues: string[] } | null;
   started_at: string | null; finished_at: string | null;
+}
+export type Verdict = "confirmed" | "discarded" | "inconclusive";
+export interface MovePlan {
+  hypothesis: string; action: string; expected_result: string; stop_condition: string;
+  rationale: string | null; source: "ai" | "rules"; planned_at: string | null;
 }
 export interface Score { accuracy: number; eval_bar: number; counts: Partial<Record<Grade, number>>; }
 export interface CampaignConfig {
@@ -466,6 +560,7 @@ export interface CampaignConfig {
   allowed_profiles: Profile[]; allowed_methods: string[]; max_requests_per_second: number;
   max_total_requests: number; request_timeout_s: number; window_start: string | null;
   window_end: string | null; authorized_by: string; authorized_at: string;
+  unattended: boolean; only_tests: string[] | null;
 }
 export interface Campaign {
   id: string; config: CampaignConfig; state: CampaignState; created_at: string;
@@ -482,10 +577,24 @@ export interface AuditEntry {
 export interface GameReview {
   campaign: Campaign; executive_summary: string | null;
   key_moments: { move: number; summary: string }[]; audit: AuditEntry[];
+  summary: ExecutiveSummary | null; comparison: Comparison | null;
+}
+export interface ExecutiveSummary {
+  headline: string; risk_level: "critico" | "alto" | "medio" | "baixo"; plain_language: string;
+  top_risks: { move: number; title: string; why: string }[]; next_steps: string[]; source: "ai" | "rules";
+}
+export interface Comparison {
+  previous_campaign_id: string; previous_accuracy: number | null; accuracy_delta: number | null;
+  fixed: string[]; new: string[]; still_failing: string[];
+}
+export interface TimelineEntry {
+  at: string; kind: "campaign" | "decision" | "approval_requested" | "approval" | "command" | "blocked" | "result" | "score" | "stop";
+  move: number | null; summary: string; details: Record<string, unknown>;
 }
 export interface ApprovalResponse { campaign_id: string; move: number; approval: Approval; }
 export interface CreateCampaignBody {
   config: Pick<CampaignConfig, "origin" | "authorized_by" | "authorized_at">
-    & Partial<Pick<CampaignConfig, "extra_origins" | "included_paths" | "excluded_paths" | "window_start" | "window_end">>;
+    & Partial<Pick<CampaignConfig, "extra_origins" | "included_paths" | "excluded_paths" | "window_start" | "window_end" | "unattended">>;
+  revalidate_from?: string;
 }
 ```

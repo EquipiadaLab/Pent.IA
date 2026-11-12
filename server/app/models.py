@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -85,6 +85,14 @@ class CampaignState(StrEnum):
     FAILED = "failed"
 
 
+class Verdict(StrEnum):
+    """Item 5 do desafio: o achado foi reconfirmado na evidencia real?"""
+
+    CONFIRMED = "confirmed"  # reproduziu na segunda observacao
+    DISCARDED = "discarded"  # nao se reproduziu (falso positivo/instabilidade)
+    INCONCLUSIVE = "inconclusive"  # nao foi possivel reconfirmar
+
+
 class EventType(StrEnum):
     CAMPAIGN_STARTED = "campaign_started"
     MOVE_PLANNED = "move_planned"
@@ -120,6 +128,14 @@ class CampaignConfig(BaseModel):
     window_end: datetime | None = None
     authorized_by: str = Field(description="Quem autorizou o teste")
     authorized_at: datetime = Field(description="Quando foi autorizado")
+    unattended: bool = Field(
+        default=False,
+        description="Execucao automatica (ex.: diaria): testes sensiveis so rodam se houver "
+        "pre-aprovacao no SERVIDOR; sem ela, sao negados sem esperar humano.",
+    )
+    only_tests: list[str] | None = Field(
+        default=None, description="Revalidacao: joga so estes test_ids (definido pelo servidor)."
+    )
 
 
 # --------------------------------------------------------------------------
@@ -134,6 +150,25 @@ class Evidence(BaseModel):
     response_headers: dict[str, str] = Field(default_factory=dict)
     response_sha256: str | None = None
     note: str | None = None
+
+
+class MovePlan(BaseModel):
+    """Item 3 do desafio: registrado ANTES de executar o lance."""
+
+    hypothesis: str
+    action: str
+    expected_result: str
+    stop_condition: str
+    rationale: str | None = None  # por que este lance agora
+    source: Literal["ai", "rules"] = "rules"  # quem planejou: IA ou regras (fallback)
+    planned_at: datetime | None = None
+
+
+class AIReview(BaseModel):
+    """Parecer do 'juiz' (IA revisora) sobre o comentario da IA."""
+
+    verdict: Literal["approved", "rejected"]
+    issues: list[str] = Field(default_factory=list)
 
 
 class Move(BaseModel):
@@ -156,6 +191,12 @@ class Move(BaseModel):
     explanation: str | None = None  # fato deterministico do teste (sempre presente apos executar)
     ai_explanation: str | None = None  # comentario da IA (Game Review), cita evidence ids; pode faltar
     recommendation: str | None = None  # "melhor lance": a correcao
+
+    plan: MovePlan | None = None  # hipotese/acao/resultado esperado/parada (antes de executar)
+    verdict: Verdict | None = None  # so para achados (warning/fail): confirmado/descartado/inconclusivo
+    impact: str | None = None  # impacto se o problema for explorado
+    reproduce: list[str] = Field(default_factory=list)  # passos de reproducao (comandos curl)
+    ai_review: AIReview | None = None  # juiz aprovou/rejeitou o ai_explanation
 
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -208,6 +249,45 @@ class KeyMoment(BaseModel):
     summary: str
 
 
+class TopRisk(BaseModel):
+    move: int
+    title: str
+    why: str
+
+
+class ExecutiveSummary(BaseModel):
+    """Resumo executivo estruturado (JSON) para a tela."""
+
+    headline: str
+    risk_level: Literal["critico", "alto", "medio", "baixo"]
+    plain_language: str
+    top_risks: list[TopRisk] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
+    source: Literal["ai", "rules"] = "rules"
+
+
+class Comparison(BaseModel):
+    """Comparacao com a partida anterior do mesmo alvo (validacao continua)."""
+
+    previous_campaign_id: str
+    previous_accuracy: float | None = None
+    accuracy_delta: float | None = None
+    fixed: list[str] = Field(default_factory=list)  # test_ids que falhavam e agora passam
+    new: list[str] = Field(default_factory=list)  # falhas que nao existiam antes
+    still_failing: list[str] = Field(default_factory=list)
+
+
+class TimelineEntry(BaseModel):
+    """Item 8: registro cronologico unico de hipoteses, decisoes, aprovacoes, comandos e resultados."""
+
+    at: datetime
+    kind: Literal["campaign", "decision", "approval_requested", "approval", "command",
+                  "blocked", "result", "score", "stop"]
+    move: int | None = None
+    summary: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class GameReview(BaseModel):
     """Relatorio estilo Game Review do Chess.com."""
 
@@ -215,3 +295,5 @@ class GameReview(BaseModel):
     executive_summary: str | None = None
     key_moments: list[KeyMoment] = Field(default_factory=list)
     audit: list[AuditEntry] = Field(default_factory=list)
+    summary: ExecutiveSummary | None = None  # versao estruturada do resumo
+    comparison: Comparison | None = None  # vs. partida anterior do mesmo alvo
