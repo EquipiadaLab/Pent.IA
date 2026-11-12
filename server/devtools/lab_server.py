@@ -1,7 +1,7 @@
 """Alvo de ENSAIO local com falhas propositais (so escuta em 127.0.0.1).
 
 Serve para testar o Motor e para a demo nao depender da rede do evento.
-    python devtools/lab_server.py            # vulneravel, porta 8000
+    python devtools/lab_server.py            # vulneravel, porta 8080
     python devtools/lab_server.py --hardened # versao corrigida (para a "revanche")
 """
 
@@ -77,7 +77,7 @@ def start(port: int = 0, hardened: bool = False) -> tuple[ThreadingHTTPServer, s
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--hardened", action="store_true")
     args = ap.parse_args()
     srv, url = start(args.port, args.hardened)

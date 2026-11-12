@@ -13,9 +13,10 @@ from app.engine.planner import Planner
 from app.engine.scope import ScopeGuard, utcnow
 from app.interfaces import EventSink
 from app.models import (
-    Approval, Campaign, CampaignConfig, CampaignState, Confidence, Event, EventType,
+    Approval, AuditEntry, Campaign, CampaignConfig, CampaignState, Confidence, Event, EventType,
     Grade, Move, Severity, Status,
 )
+from app.authorization import explain_refusal, is_authorized
 from app.redact import sanitize_url
 
 
@@ -28,11 +29,13 @@ async def run_campaign(campaign_id: str, config: CampaignConfig, sink: EventSink
     campaign = Campaign(id=campaign_id, config=config, state=CampaignState.RUNNING, created_at=utcnow())
     guard = ScopeGuard(config)
 
-    window = guard.window_ok()
-    if not window.allowed:  # campanha recusa rodar fora da janela
-        await _emit(sink, campaign_id, EventType.SCOPE_BLOCKED, reason=window.reason)
+    refusal = _refusal(config, guard)
+    if refusal:  # alvo nao autorizado ou fora da janela: nenhuma requisicao sai
+        await sink.audit(AuditEntry(campaign_id=campaign_id, at=utcnow(), method="-",
+                                    url=sanitize_url(config.origin), allowed=False, reason=refusal))
+        await _emit(sink, campaign_id, EventType.SCOPE_BLOCKED, url=sanitize_url(config.origin), reason=refusal)
         campaign.state, campaign.finished_at = CampaignState.FAILED, utcnow()
-        await _emit(sink, campaign_id, EventType.CAMPAIGN_FINISHED, state=campaign.state.value, reason=window.reason)
+        await _emit(sink, campaign_id, EventType.CAMPAIGN_FINISHED, state=campaign.state.value, reason=refusal)
         return campaign
 
     fetcher = Fetcher(campaign_id, config, sink, guard)
@@ -66,8 +69,8 @@ async def run_campaign(campaign_id: str, config: CampaignConfig, sink: EventSink
             await _emit(sink, campaign_id, EventType.FINDING_CREATED, move)
 
             campaign.score = compute_score(campaign.moves)
-            await _emit(sink, campaign_id, EventType.SCORE_UPDATED,
-                        accuracy=campaign.score.accuracy, eval_bar=campaign.score.eval_bar)
+            await _emit(sink, campaign_id, EventType.SCORE_UPDATED, accuracy=campaign.score.accuracy,
+                        eval_bar=campaign.score.eval_bar, score=campaign.score.model_dump(mode="json"))
         else:
             campaign.state = CampaignState.FINISHED
     finally:
@@ -75,9 +78,19 @@ async def run_campaign(campaign_id: str, config: CampaignConfig, sink: EventSink
 
     campaign.score = compute_score(campaign.moves)
     campaign.finished_at = utcnow()
+    await _emit(sink, campaign_id, EventType.SCORE_UPDATED, accuracy=campaign.score.accuracy,
+                eval_bar=campaign.score.eval_bar, score=campaign.score.model_dump(mode="json"))
     await _emit(sink, campaign_id, EventType.CAMPAIGN_FINISHED, state=campaign.state.value,
                 accuracy=campaign.score.accuracy, requests=guard.requests_made)
     return campaign
+
+
+def _refusal(config: CampaignConfig, guard: ScopeGuard) -> str | None:
+    for url in [config.origin, *config.extra_origins]:
+        if not is_authorized(url):
+            return explain_refusal(sanitize_url(url))
+    window = guard.window_ok()
+    return None if window.allowed else window.reason
 
 
 def _new_move(number: int, spec: CheckSpec) -> Move:

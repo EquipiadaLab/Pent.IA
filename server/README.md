@@ -35,3 +35,29 @@ python -m pytest
 ## API publica e seguranca
 
 Ver [docs/API.md](docs/API.md). O front so recebe `Public*` (`app/public_schemas.py`); segredos sao mascarados por `app/redact.py` antes de gravar e antes de sair.
+
+## Como rodar (guia rapido)
+
+```bash
+cd server
+pip install -r requirements.txt
+```
+
+### 1. Testar um site e receber o relatorio (terminal)
+```bash
+python scan.py --lab                    # site de treino com falhas (local)
+python scan.py --lab --hardened         # site de treino corrigido ("revanche")
+python scan.py https://alvo.com --por "Organizacao"   # site real AUTORIZADO
+```
+- Lances aparecem ao vivo; testes sensiveis pedem `s/N` (ou `--aprovar-tudo`).
+- Relatorio em `server/reports/game-review-*.md` (+ `.json`), com resumo do Claude.
+- Site real so roda se estiver em `AUTHORIZED_TARGETS` no `.env`
+  (ex.: `AUTHORIZED_TARGETS=https://alvo.com`). Sem isso, so `127.0.0.1`.
+
+### 2. Subir a API (para o front / navegador)
+```bash
+python devtools/lab_server.py           # terminal 1: site de treino em http://127.0.0.1:8080
+python -m uvicorn app.main:app --port 8000   # terminal 2: API
+```
+Abra http://127.0.0.1:8000/docs, use `POST /campaigns` com `origin` = `http://127.0.0.1:8080`
+e acompanhe em `GET /campaigns/{id}`.
