@@ -1,7 +1,7 @@
 """Cliente do Claude via Amazon Bedrock (implementa ``app.interfaces.LLMClient``).
 
 Configuracao SO por ambiente (.env fora do Git):
-    BEDROCK_MODEL_ID  ex.: anthropic.claude-sonnet-5-5
+    BEDROCK_MODEL_ID  ex.: us.anthropic.claude-sonnet-5-5 (prefixo us. obrigatorio)
     AWS_REGION        ex.: us-east-1
     AWS_PROFILE       (opcional) ou as credenciais temporarias do evento
 
@@ -19,8 +19,11 @@ import os
 
 import boto3
 from botocore.config import Config
+from dotenv import load_dotenv
 
 from app.redact import scrub_text
+
+load_dotenv()  # le server/.env (fora do Git) para modelo, regiao e credenciais
 
 # Fixo no codigo: conteudo do alvo e DADO nao confiavel (ASI01 / ASI09).
 SAFETY_PREAMBLE = (
@@ -37,8 +40,8 @@ class LLMError(RuntimeError):
 
 class BedrockLLM:
     def __init__(self, model_id: str | None = None, region: str | None = None, client=None) -> None:
-        self.model_id = model_id or os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-5-5")
-        region = region or os.getenv("AWS_REGION", "us-east-1")
+        self.model_id = model_id or os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-5-5")
+        region = region or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-east-1"
         self._client = client or boto3.Session().client(
             "bedrock-runtime",
             region_name=region,
@@ -54,7 +57,7 @@ class BedrockLLM:
                 modelId=self.model_id,
                 system=[{"text": f"{SAFETY_PREAMBLE}\n\n{scrub_text(system) or ''}"}],
                 messages=[{"role": "user", "content": [{"text": scrub_text(prompt) or ""}]}],
-                inferenceConfig={"maxTokens": max_tokens, "temperature": 0.2},
+                inferenceConfig={"maxTokens": max_tokens},
             )
             parts = resp["output"]["message"]["content"]
             return "".join(p.get("text", "") for p in parts).strip()
