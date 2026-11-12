@@ -17,7 +17,7 @@ export default function AppHeader() {
                     <BreadcrumbList>
                         <BreadcrumbItem className="hidden md:block">
                             <BreadcrumbLink className="tracking-widest" render={<a href="#" />}>
-                                PENTE.IA
+                                PENT.IA
                             </BreadcrumbLink>
                         </BreadcrumbItem>
                         <BreadcrumbSeparator className="hidden md:block" />
