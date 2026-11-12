@@ -1,11 +1,17 @@
+import { SidebarInset, SidebarProvider } from "./components/ui/sidebar"
+
+import AppHeader from "./components/header"
 import AppSidebar from "./components/sidebar"
 
 export function App() {
   return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
+    <div className="flex min-h-svh">
+      <SidebarProvider>
         <AppSidebar />
-      </div>
+        <SidebarInset className="px-8">
+          <AppHeader />
+        </SidebarInset>
+      </SidebarProvider>
     </div>
   )
 }

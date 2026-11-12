@@ -2,6 +2,8 @@ import { FileSearchCorner, History, KeyRound, LayoutDashboard, Shield, ShieldChe
 import { useEffect, useState } from "react";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./ui/sidebar";
 
+import { useUrlStore } from "@/stores/url.store";
+
 const items = [
     {
         title: "Campanha",
@@ -32,11 +34,17 @@ const items = [
 
 export default function AppSidebar() {
     const [hashValue, setHashValue] = useState(window.location.hash);
+    const setCurrentUrl = useUrlStore((state) => state.setCurrentUrl);
+
+    useEffect(() => {
+        setCurrentUrl(window.location.hash, items.find(item => item.url === window.location.hash)?.title || "Campanha");
+    }, [setCurrentUrl]);
 
     useEffect(() => {
         // Função para atualizar o hash se ele mudar na navegação
         const handleHashChange = () => {
             setHashValue(window.location.hash);
+            setCurrentUrl(window.location.hash, items.find(item => item.url === window.location.hash)?.title || "Campanha");
         };
 
         window.addEventListener('hashchange', handleHashChange);
@@ -44,7 +52,7 @@ export default function AppSidebar() {
         return () => {
             window.removeEventListener('hashchange', handleHashChange);
         };
-    }, []);
+    }, [setCurrentUrl]);
 
     return (
         <Sidebar>
