@@ -110,7 +110,7 @@ class EventType(StrEnum):
 # Escopo / regras de engajamento (configuracao da campanha, nunca constante)
 # --------------------------------------------------------------------------
 class CampaignConfig(BaseModel):
-    origin: str = Field(description="Origem exata: esquema + host + porta. Ex.: https://alvo.com")
+    origin: str = Field(default="", description="Origem exata: esquema + host + porta. Ex.: https://alvo.com. Vazio = usa DEFAULT_TARGET do servidor.")
     extra_origins: list[str] = Field(
         default_factory=list,
         description="Origens adicionais em escopo (ex.: versao http:// para o lance de redirect).",

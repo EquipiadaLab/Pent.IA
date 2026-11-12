@@ -15,7 +15,14 @@ python devtools/lab_server.py                   # terminal 1: site de treino →
 python -m uvicorn app.main:app --port 8000      # terminal 2: API          → http://127.0.0.1:8000
 ```
 
-No front: `VITE_API_URL=http://127.0.0.1:8000` (única variável; **nenhuma chave da AWS no front**).
+No front: `VITE_API_URL` (única variável; **nenhuma chave da AWS no front**):
+- Local: `VITE_API_URL=http://127.0.0.1:8000`
+- Servidor na AWS (com HTTPS via Caddy): `VITE_API_URL=https://3-81-3-113.sslip.io`
+
+O WebSocket deriva daí trocando `http`→`ws` / `https`→`wss` (ex.: `wss://3-81-3-113.sslip.io/...`).
+Para o navegador conectar, a **origem da página do front** precisa estar liberada no servidor: o
+backend define `CORS_ORIGINS` (vale para CORS e WebSocket). Se o front for hospedado em um endereço
+qualquer, use `CORS_ORIGINS=*` no `.env` do servidor (libera qualquer origem; mais aberto, menos seguro).
 
 Gerar tipos TypeScript a partir do FastAPI (opcional):
 ```bash
@@ -133,8 +140,8 @@ Campos extras opcionais (aditivos):
 
 | Campo | Obrigatório | Comportamento na tela |
 |---|---|---|
-| `origin` | sim | Input "Site autorizado". Deve começar com `http://` ou `https://` |
-| `authorized_by` | sim | Input "Quem autorizou" |
+| `origin` | **não** | Input "Site a testar". Deve começar com `http://` ou `https://`. **Se vier vazio/omitido, o servidor usa o `DEFAULT_TARGET`** (veja `GET /scope`). A aplicação aceita **qualquer URL pública**; redes internas/privadas são recusadas |
+| `authorized_by` | sim | Input "Quem autorizou" (fica na auditoria — accountability) |
 | `authorized_at` | sim | **Não pedir ao usuário**: envie `new Date().toISOString()` |
 | `extra_origins` | não | Ex.: versão `http://` do site, para o teste de redirecionamento |
 | `included_paths` / `excluded_paths` | não | Avançado. Padrão: `["/"]` / `[]` |
@@ -155,9 +162,13 @@ Campos extras opcionais (aditivos):
 ```
 Guarde o `id` e comece o polling (seção 3).
 
-**Site não autorizado:** a resposta ainda é **201**, mas a partida termina sem lances, com
-`state = "failed"`, e chegam os eventos `scope_blocked` → `campaign_finished` com `data.reason`.
-Mostre isso em vermelho: *"Bloqueado: fora do escopo autorizado"*. É um ótimo momento da demo.
+**Alvo recusado:** por padrão o servidor está em **modo aberto** — aceita qualquer URL pública que o
+front enviar (o operador declara o alvo e assume a autorização). São recusados: URL inválida, host
+que não resolve, e **endereços internos/privados** (rede interna, `169.254.169.254` etc. — anti-SSRF).
+Também existe o **modo lista fixa** (`AUTHORIZED_TARGETS` no servidor): aí só os alvos da lista passam.
+Em qualquer recusa, a resposta ainda é **201**, mas a partida termina sem lances, com `state = "failed"`
+e os eventos `scope_blocked` → `campaign_finished` (`data.reason`). Mostre em vermelho: *"Alvo recusado:
+{reason}"*. Use `GET /scope` para saber o modo atual e o `default_target`.
 
 **Regras do servidor:** se o corpo trouxer `allowed_methods`, limites de velocidade etc., o
 servidor **ignora ou limita** esses valores (só GET/OPTIONS, no máximo 5 req/s). A resposta mostra
@@ -275,8 +286,10 @@ Agrupe por `phase` (Abertura / Meio-jogo / Final) e marque com um cadeado os que
 O que o **servidor** permite. Use na tela de configuração (item 2 do desafio).
 ```json
 {
-  "authorized_targets": ["https://alvo-autorizado.com:443"],
-  "local_only": false,
+  "authorized_targets": [],
+  "accepts_any_target": true,
+  "default_target": "https://3.migbot.com.br",
+  "blocks_private_targets": true,
   "allowed_methods": ["GET", "OPTIONS"],
   "allowed_profiles": ["active_light", "passive"],
   "blocked_profiles": ["intrusive"],
@@ -286,8 +299,10 @@ O que o **servidor** permite. Use na tela de configuração (item 2 do desafio).
 ```
 | Campo | Comportamento |
 |---|---|
-| `authorized_targets` | Mostre como **lista de escolha** do campo "Site autorizado" (evita digitar errado) |
-| `local_only` | `true` → só o site de treino local é aceito; mostre um aviso |
+| `accepts_any_target` | `true` = modo aberto: o input "Site a testar" é livre. `false` = use `authorized_targets` como **lista de escolha** |
+| `default_target` | O que o servidor usa se o `origin` vier vazio. Mostre como placeholder do input |
+| `blocks_private_targets` | `true` = redes internas/privadas são sempre recusadas (anti-SSRF). Avise se o usuário digitar um IP interno |
+| `authorized_targets` | Só no modo lista fixa: os únicos alvos aceitos |
 | `allowed_methods` / `blocked_profiles` | Texto fixo "Somente leitura (GET/OPTIONS) · Testes intrusivos bloqueados" |
 | `limits` | "Até 5 requisições/s · máximo 500 por partida" |
 | `preapproval` | Para execução automática: quais testes sensíveis rodam sem humano, quem autorizou e até quando. `active` = válidos agora |
@@ -701,7 +716,8 @@ export interface CatalogTest {
   owasp_top10: string; needs_approval: boolean; hypothesis: string; expected: string; impact: string;
 }
 export interface ScopeResponse {
-  authorized_targets: string[]; local_only: boolean; allowed_methods: string[];
+  authorized_targets: string[]; accepts_any_target: boolean; default_target: string | null;
+  blocks_private_targets: boolean; allowed_methods: string[];
   allowed_profiles: Profile[]; blocked_profiles: Profile[];
   limits: { max_requests_per_second: number; max_total_requests: number; request_timeout_s: number };
   preapproval: { tests: string[]; approved_by: string | null; valid_until: string | null; active: string[] };
@@ -714,8 +730,8 @@ export interface CampaignStatusResponse {
   score: Score | null; last_seq: number; created_at: string; finished_at: string | null; elapsed_s: number;
 }
 export interface CreateCampaignBody {
-  config: Pick<CampaignConfig, "origin" | "authorized_by" | "authorized_at">
-    & Partial<Pick<CampaignConfig, "extra_origins" | "included_paths" | "excluded_paths" | "window_start" | "window_end" | "unattended">>;
+  config: Pick<CampaignConfig, "authorized_by" | "authorized_at">
+    & Partial<Pick<CampaignConfig, "origin" | "extra_origins" | "included_paths" | "excluded_paths" | "window_start" | "window_end" | "unattended">>;
   revalidate_from?: string;
 }
 ```

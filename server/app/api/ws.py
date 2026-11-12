@@ -43,10 +43,13 @@ _active = 0
 
 
 def _origin_allowed(websocket: WebSocket) -> bool:
+    allowed = cors_origins()
+    if "*" in allowed:  # CORS_ORIGINS=* libera qualquer origem
+        return True
     origin = websocket.headers.get("origin")
     if origin is None:  # clientes fora do navegador (scripts, testes) nao sofrem CSWSH
         return True
-    return origin.rstrip("/") in cors_origins()
+    return origin.rstrip("/") in allowed
 
 
 @router.websocket("/campaigns/{campaign_id}/ws")
