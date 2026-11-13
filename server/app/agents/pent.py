@@ -19,19 +19,12 @@ from app.agents.Execution.execution_agent import ExecutionAgent
 from app.agents.Impact.impact_agent import ImpactAgent
 from app.agents.InitialAccess.initial_access_agent import InitialAccessAgent
 from app.agents.PrivilegeEscalation.privilege_escalation_agent import PrivilegeEscalationAgent
-from app.agents.Discovery.discovery_agent import DiscoveryAgent
 from app.agents.Recon.recon_agent import ReconAgent
 from app.agents.base_agent import BaseTacticAgent
 from app.engine.checks import CATALOG_BY_ID
 from app.schemas.agents_contract import PentDecision, TacticDecisionContext, TechniqueRecommendation
 
 _PHASE_ORDER = {"opening": 0, "middlegame": 1, "endgame": 2}
-
-
-def default_agents() -> list[BaseTacticAgent]:
-    """Agentes de tatica ja implementados. Cada novo agente entra aqui com
-    uma linha; a regra de seguranca do Pent nao muda."""
-    return [ReconAgent(), DiscoveryAgent()]
 
 
 class Pent:
@@ -56,7 +49,6 @@ class Pent:
                 CredentialAccessAgent(),
             ]
         )
-        self._agents = agents if agents is not None else default_agents()
 
     def choose_next(self, context: TacticDecisionContext) -> PentDecision:
         """Seleciona a melhor sugestao valida, sem rede e sem efeitos.

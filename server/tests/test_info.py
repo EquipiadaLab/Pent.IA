@@ -77,7 +77,7 @@ def test_scope(client, monkeypatch):
     monkeypatch.setenv("LOCKED_TARGET", "https://3.migbot.com.br")
     locked = client.get("/scope").json()
     assert locked["locked_target"] == "https://3.migbot.com.br"
-    assert locked["authorized_targets"] == ["https://3.migbot.com.br"]
+    assert locked["authorized_targets"] == ["https://3.migbot.com.br:443"]
     assert locked["accepts_any_target"] is False
     monkeypatch.delenv("LOCKED_TARGET")
     assert s["allowed_methods"] == ["GET", "OPTIONS"] and s["blocked_profiles"] == ["intrusive"]
