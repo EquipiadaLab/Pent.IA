@@ -37,8 +37,6 @@ contagem de cobertura.
 | Resource Development | TA0042 | — | — | Beatriz | pendente |
 | Persistence | TA0003 | — | — | Daniel | pendente |
 | Lateral Movement | TA0008 | — | — | Beatriz | pendente |
-| Command and Control | TA0011 | — | — | Sidney | pendente (fit fraco; decisão aberta) |
-| Exfiltration | TA0010 | — | — | Sidney | pendente |
 
 Observações de mapeamento:
 - `T1068` em Privilege Escalation é uma **aproximação consciente**: o check
@@ -58,12 +56,18 @@ Associá-las a checks existentes seria inflar a cobertura ATT&CK sem fundamento.
 |---|---|---|
 | Stealth / Defense Evasion | TA0005 | A tática descreve o atacante **evadindo defesas**, não uma propriedade observável do alvo por fora. Sem agente/host instrumentado, não há sinal black-box honesto. |
 | Defense Impairment | TA0005 (T1562 Impair Defenses) | "Enfraquecer defesas" pressupõe acesso para desativar controles. O que é observável por fora (ausência de CSP/HSTS/headers, WAF) já é coberto por outros checks em suas táticas próprias; recriar aqui seria duplicação e dupla contagem. |
+| Command and Control | TA0011 | C2 descreve a comunicação de malware já instalado com a infraestrutura do atacante; não é observável por fora num scanner HTTP. Não há técnica ATT&CK honesta para "o alvo tem open redirect". O único check seguro relacionado (open redirect / CWE-601) não representa C2, então mapeá-lo aqui seria forçar a técnica. |
+| Exfiltration | TA0010 | As técnicas reais (T1041/T1048/T1567) pressupõem o atacante já com os dados e um canal de saída; demonstrá-las exigiria de fato exfiltrar. Todo sinal seguro e observável por fora (dados em massa expostos sem autenticação) já é coberto por Collection (T1213). Implementar aqui recontaria T1213. |
 
 Notas:
 - Originalmente Stealth era de Sidney e Defense Impairment de Daniel; ambas
   caíam em TA0005. A remoção de escopo também resolve esse conflito de posse.
+- Command and Control e Exfiltration eram de Sidney; foram descopadas pelos
+  motivos acima, não por falta de tempo.
 - Reabrir essas táticas só faz sentido se o produto passar a ter sessão
-  autenticada ou capacidade de instrumentação/rede interna.
+  autenticada ou capacidade de instrumentação/rede interna. O check de open
+  redirect (CWE-601) continua sendo uma opção válida no futuro, desde que
+  mapeado pela técnica que realmente representa, nunca como C2.
 
 ## Visibilidade da participação de cada agente (front-end)
 
@@ -76,13 +80,6 @@ achado confirmado e quais técnicas MITRE foram observadas. Ver `API.md`, seçã
 
 ## Pendências de coordenação
 
-- **Command and Control (TA0011, Sidney)**: fit muito fraco em black-box. O
-  único check seguro vagamente relacionado seria *open redirect* (GET, sem
-  efeito), mas o mapeamento honesto dele não é C2. Decisão em aberto: descopar
-  como Stealth/Defense, ou implementar o check sob a técnica que ele realmente
-  representa (não forçar C2).
-- **Exfiltration (TA0010, Sidney)**: em web, tende a se sobrepor a Collection
-  (exposição de dados). Avaliar se há sinal distinto antes de implementar.
 - Táticas que exigem host/rede interna (Resource Development, Persistence,
   Lateral Movement) têm o mesmo risco de inviabilidade black-box; tratar caso a
   caso com os responsáveis.
