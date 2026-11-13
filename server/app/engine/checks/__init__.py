@@ -4,7 +4,7 @@ Adicionar um lance = acrescentar um CheckSpec aqui. O agente (e a IA) so
 escolhe lances deste catalogo: nunca cria requisicoes novas.
 """
 
-from app.engine.checks import active, collection, cookies, headers, privesc, recon, transport
+from app.engine.checks import active, collection, cookies, execution, headers, privesc, recon, transport
 from app.engine.checks.base import CheckSpec
 from app.models import Phase, Profile, Severity
 
@@ -129,6 +129,11 @@ CATALOG: list[CheckSpec] = [
           hyp="Endpoints privilegiados conhecidos podem responder a um cliente anonimo.",
           exp="Recursos privilegiados exigem autenticacao/autorizacao (401/403) e nao expoem dados.",
           imp="Acesso anonimo a dados/funcao privilegiada e quebra de controle de acesso: um visitante age como usuario de maior privilegio."),
+    _spec("EXEC-SSTI-001", "Prova de conceito de Server-Side Template Injection", P.ENDGAME, ACTIVE, H,
+          "WSTG-INPV-18", "A05:2025", execution.ssti_probe, approval=True,
+          hyp="O endpoint de busca pode avaliar expressoes de template enviadas pelo usuario.",
+          exp="Expressoes aritmeticas enviadas na busca sao tratadas como texto, nunca avaliadas.",
+          imp="Um motor de template avaliando entrada do usuario como codigo e a porta para execucao remota de codigo (RCE)."),
 ]
 
 CATALOG_BY_ID: dict[str, CheckSpec] = {c.test_id: c for c in CATALOG}

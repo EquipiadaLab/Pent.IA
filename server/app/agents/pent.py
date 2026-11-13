@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from app.agents.Collection.collection_agent import CollectionAgent
 from app.agents.Discovery.discovery_agent import DiscoveryAgent
+from app.agents.Execution.execution_agent import ExecutionAgent
 from app.agents.InitialAccess.initial_access_agent import InitialAccessAgent
 from app.agents.PrivilegeEscalation.privilege_escalation_agent import PrivilegeEscalationAgent
 from app.agents.Recon.recon_agent import ReconAgent
@@ -41,6 +42,7 @@ class Pent:
                 InitialAccessAgent(),
                 CollectionAgent(),
                 PrivilegeEscalationAgent(),
+                ExecutionAgent(),
             ]
         )
 
