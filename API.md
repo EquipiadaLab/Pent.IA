@@ -519,6 +519,23 @@ Exemplo real:
 | `reproduce` | Lista de comandos `curl` — bloco de código com botão copiar ("Como reproduzir") |
 | `ai_review` | `approved` → mostrar `ai_explanation` com selo "revisado pelo juiz". `rejected` → `ai_explanation` vem `null`; opcionalmente mostre "comentário da IA reprovado" + `issues` |
 
+#### Quem recomendou o lance + MITRE ATT&CK (no `Move`)
+Cada lance pode trazer qual agente especialista o recomendou e para qual tática/técnica do [MITRE ATT&CK](https://attack.mitre.org/) ele mapeia. Campos **opcionais** — se `null`, não mostre o selo. Hoje preenchidos por `Recon` e `Discovery`; conforme a equipe liga mais agentes, os mesmos campos passam a trazer outras táticas, **sem mudar o contrato**.
+```json
+"recommended_by": "Recon",
+"attack_tactic_id": "TA0043",
+"attack_tactic_name": "Reconnaissance",
+"attack_technique_id": "T1595",
+"attack_technique_name": "Active Scanning",
+"attack_url": "https://attack.mitre.org/techniques/T1595"
+```
+| Campo | Comportamento |
+|---|---|
+| `recommended_by` | string \| null — nome do agente ("Recon", "Discovery"). Selo "Recomendado por: Recon" |
+| `attack_tactic_id` / `attack_tactic_name` | string \| null — tática ATT&CK (ex.: `TA0043` / `Reconnaissance`). Selo de tática |
+| `attack_technique_id` / `attack_technique_name` | string \| null — técnica (ex.: `T1595` / `Active Scanning`) |
+| `attack_url` | string \| null — link oficial do MITRE. Use no selo da técnica (abre em nova aba) |
+
 ### 4.3 `Evidence`
 ```json
 {
@@ -660,6 +677,10 @@ export interface Move {
   evidence: Evidence[]; explanation: string | null; ai_explanation: string | null; recommendation: string | null;
   plan: MovePlan | null; verdict: Verdict | null; impact: string | null; reproduce: string[];
   ai_review: { verdict: "approved" | "rejected"; issues: string[] } | null;
+  recommended_by: string | null;
+  attack_tactic_id: string | null; attack_tactic_name: string | null;
+  attack_technique_id: string | null; attack_technique_name: string | null;
+  attack_url: string | null;
   started_at: string | null; finished_at: string | null;
 }
 export type Verdict = "confirmed" | "discarded" | "inconclusive";
