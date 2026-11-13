@@ -199,7 +199,8 @@ def _new_move(
         }
     return Move(
         move=number, test_id=spec.test_id, title=spec.title, phase=spec.phase, profile=spec.profile,
-        wstg=spec.wstg, owasp_top10=spec.owasp, severity=spec.severity, impact=spec.impact, plan=plan,
+        wstg=spec.wstg, owasp_top10=spec.owasp, severity=spec.severity, impact=spec.impact,
+        exploitation_scenario=spec.exploitation_scenario or spec.impact, plan=plan,
         # Todo teste da nova arquitetura comeca pendente de decisao humana.
         approval=Approval.PENDING,
         **provenance,

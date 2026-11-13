@@ -85,6 +85,7 @@ class Fetcher:
         ev_id: str,
         headers: dict[str, str] | None = None,
         note: str | None = None,
+        json_body: dict | None = None,
     ) -> FetchResult:
         if await self.sink.should_stop():
             return FetchResult(url, error="stopped")
@@ -103,7 +104,7 @@ class Fetcher:
 
         await self.guard.throttle()
         try:
-            resp = await self.client.request(method, url, headers=headers)
+            resp = await self.client.request(method, url, headers=headers, json=json_body)
         except Exception as exc:  # noqa: BLE001 - falha de rede vira resultado
             kind = classify_error(exc)
             await self.sink.audit(

@@ -65,6 +65,15 @@ class PublicMove(_Public):
     explanation: str | None = None  # texto puro, nao HTML
     ai_explanation: str | None = None  # texto puro, nao HTML
     recommendation: str | None = None  # texto puro, nao HTML
+    recommended_by: str | None = None
+    attack_tactic_id: str | None = None
+    attack_tactic_name: str | None = None
+    attack_technique_id: str | None = None
+    attack_technique_name: str | None = None
+    attack_url: str | None = None
+    impact: str | None = None
+    exploitation_scenario: str | None = None
+    verdict: m.Verdict | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
@@ -87,6 +96,15 @@ class PublicMove(_Public):
             explanation=scrub_text(mv.explanation),
             ai_explanation=scrub_text(mv.ai_explanation),
             recommendation=scrub_text(mv.recommendation),
+            recommended_by=scrub_text(mv.recommended_by),
+            attack_tactic_id=scrub_text(mv.attack_tactic_id),
+            attack_tactic_name=scrub_text(mv.attack_tactic_name),
+            attack_technique_id=scrub_text(mv.attack_technique_id),
+            attack_technique_name=scrub_text(mv.attack_technique_name),
+            attack_url=scrub_text(mv.attack_url),
+            impact=scrub_text(mv.impact),
+            exploitation_scenario=scrub_text(mv.exploitation_scenario),
+            verdict=mv.verdict,
             started_at=mv.started_at,
             finished_at=mv.finished_at,
         )

@@ -4,7 +4,9 @@ Adicionar um lance = acrescentar um CheckSpec aqui. O agente (e a IA) so
 escolhe lances deste catalogo: nunca cria requisicoes novas.
 """
 
-from app.engine.checks import active, cookies, headers, transport
+from app.engine.checks import (
+    active, collection, cookies, credential_access, execution, headers, impact, privesc, recon, transport,
+)
 from app.engine.checks.base import CheckSpec
 from app.models import Phase, Profile, Severity
 
@@ -39,6 +41,26 @@ CATALOG: list[CheckSpec] = [
           hyp="Os cabecalhos podem revelar o software e a versao do servidor.",
           exp="Server sem numero de versao e sem X-Powered-By.",
           imp="Versao exposta ajuda um atacante a escolher exploits conhecidos para aquela versao."),
+    _spec("RECON-ROBOTS-001", "Metadados publicos em robots.txt", P.OPENING, PASSIVE, L, "WSTG-INFO-03", "A05:2025",
+          recon.robots_txt,
+          hyp="robots.txt pode revelar caminhos que o proprio site declara publicamente.",
+          exp="Registrar se o recurso publico existe, sem seguir caminhos listados.",
+          imp="Diretorios publicamente declarados podem orientar reconhecimento posterior; nao sao falha por si so."),
+    _spec("RECON-SITEMAP-001", "Mapa publico do site", P.OPENING, PASSIVE, L, "WSTG-INFO-03", "A05:2025",
+          recon.sitemap_xml,
+          hyp="sitemap.xml pode listar recursos publicos da aplicacao.",
+          exp="Registrar se o recurso publico existe, sem seguir URLs listadas.",
+          imp="Um mapa publico ajuda a entender a superficie exposta, mas sua existencia nao e vulnerabilidade."),
+    _spec("RECON-SECURITYTXT-001", "Canal publico de seguranca", P.OPENING, PASSIVE, L, "WSTG-INFO-03", "A05:2025",
+          recon.security_txt,
+          hyp="O dominio pode nao publicar o canal security.txt para receber reportes responsaveis.",
+          exp="/.well-known/security.txt esta disponivel com canal de contato.",
+          imp="Sem canal publico, pesquisadores podem ter dificuldade para reportar falhas de forma responsavel."),
+    _spec("RECON-OPENAPI-001", "Documentacao publica de API", P.OPENING, PASSIVE, L, "WSTG-INFO-05", "A05:2025",
+          recon.openapi_documentation,
+          hyp="O alvo pode expor uma especificacao OpenAPI publicamente.",
+          exp="Registrar a existencia de /openapi.json sem chamar endpoints descritos.",
+          imp="Documentacao publica mostra a superficie da API; sua existencia nao e vulnerabilidade por si so."),
     # --- Meio-jogo (configuracao) ---
     _spec("HSTS-001", "Politica HSTS", P.MIDDLEGAME, PASSIVE, MED, "WSTG-CONF-07", "A02:2025", headers.hsts,
           hyp="O navegador pode nao ser obrigado a usar HTTPS nas proximas visitas.",
@@ -73,6 +95,21 @@ CATALOG: list[CheckSpec] = [
           hyp="O servidor pode anunciar metodos desnecessarios (TRACE, PUT, DELETE).",
           exp="Apenas os metodos usados pela aplicacao (ex.: GET, POST, OPTIONS).",
           imp="Metodos sobrando ampliam a superficie de ataque; TRACE pode ajudar a roubar cabecalhos."),
+    _spec("COLLECT-FTP-001", "Listagem de arquivos em /ftp", P.MIDDLEGAME, ACTIVE, MED, "WSTG-CONF-04",
+          "A01:2025", collection.ftp_directory_listing,
+          hyp="A rota /ftp pode expor listagem de arquivos sem exigir autenticacao.",
+          exp="/ftp nao expoe listagem de diretorio.",
+          imp="Arquivos internos (documentos, notas) ficam disponiveis para qualquer visitante nao autenticado."),
+    _spec("COLLECT-APIUSERS-001", "Dados de usuarios sem autenticacao", P.MIDDLEGAME, ACTIVE, H, "WSTG-ATHZ-01",
+          "A01:2025", collection.public_user_data,
+          hyp="A API de usuarios pode responder registros sem exigir uma sessao autenticada.",
+          exp="/api/Users/ exige autenticacao ou nao retorna registros.",
+          imp="Dados de usuarios (nomes, papeis, e-mails) ficam disponiveis para qualquer visitante nao autenticado."),
+    _spec("COLLECT-APIFEEDBACK-001", "Identificadores de usuario em feedback publico", P.MIDDLEGAME, ACTIVE, MED,
+          "WSTG-ATHZ-01", "A01:2025", collection.public_feedback_data,
+          hyp="A API de feedback pode expor o identificador do autor sem exigir autenticacao.",
+          exp="/api/Feedbacks/ nao associa registros a identificadores de usuario sem sessao.",
+          imp="Permite relacionar comentarios publicos a contas especificas, facilitando engenharia social."),
     # --- Final (ativo leve, com aprovacao humana) ---
     _spec("FILE-001", "Exposicao do repositorio .git", P.ENDGAME, ACTIVE, H, "WSTG-CONF-04", "A02:2025",
           active.git_exposed, approval=True,
@@ -89,6 +126,26 @@ CATALOG: list[CheckSpec] = [
           hyp="Erros podem mostrar stack trace, caminhos de arquivos ou consultas SQL.",
           exp="Pagina de erro generica (404) sem detalhes internos.",
           imp="Detalhes internos ajudam o atacante a mapear tecnologias, arquivos e consultas da aplicacao."),
+    _spec("AUTHZ-001", "Acesso a recurso privilegiado sem autorizacao", P.ENDGAME, ACTIVE, H,
+          "WSTG-ATHZ-02", "A01:2025", privesc.unauthorized_privileged_access, approval=True,
+          hyp="Endpoints privilegiados conhecidos podem responder a um cliente anonimo.",
+          exp="Recursos privilegiados exigem autenticacao/autorizacao (401/403) e nao expoem dados.",
+          imp="Acesso anonimo a dados/funcao privilegiada e quebra de controle de acesso: um visitante age como usuario de maior privilegio."),
+    _spec("EXEC-SSTI-001", "Prova de conceito de Server-Side Template Injection", P.ENDGAME, ACTIVE, H,
+          "WSTG-INPV-18", "A05:2025", execution.ssti_probe, approval=True,
+          hyp="O endpoint de busca pode avaliar expressoes de template enviadas pelo usuario.",
+          exp="Expressoes aritmeticas enviadas na busca sao tratadas como texto, nunca avaliadas.",
+          imp="Um motor de template avaliando entrada do usuario como codigo e a porta para execucao remota de codigo (RCE)."),
+    _spec("IMPACT-001", "Superficie de manipulacao de dados", P.ENDGAME, ACTIVE, MED,
+          "WSTG-CONF-06", "A05:2025", impact.data_mutation_surface, approval=True,
+          hyp="Endpoints de dados podem anunciar metodos destrutivos (PUT/DELETE/PATCH) a clientes anonimos.",
+          exp="Endpoints de dados nao anunciam metodos destrutivos sem autenticacao/autorizacao.",
+          imp="Metodos destrutivos ao alcance de quem nao deveria sao pre-condicao para manipulacao ou destruicao de dados."),
+    _spec("CREDS-SQLI-LOGIN-001", "Bypass de autenticacao via SQL Injection no login", P.ENDGAME, ACTIVE, H,
+          "WSTG-ATHN-02", "A05:2025", credential_access.sqli_login_bypass, approval=True,
+          hyp="O campo de email do login pode ser vulneravel a SQL Injection, permitindo autenticar sem credenciais validas.",
+          exp="O endpoint de login rejeita o payload de bypass e nao emite token para ele.",
+          imp="Bypass de autenticacao via SQLi permite assumir qualquer conta (inclusive admin) sem conhecer a senha."),
 ]
 
 CATALOG_BY_ID: dict[str, CheckSpec] = {c.test_id: c for c in CATALOG}

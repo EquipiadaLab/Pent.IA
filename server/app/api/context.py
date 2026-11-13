@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from fastapi import Request
 
 from app.config import Settings
+from app.cve.nvd_client import NvdClient
 from app.db import Database
 from app.interfaces import CampaignRunner
 from app.reporter import ReportBuilder
@@ -25,6 +26,7 @@ class AppContext:
     runner: CampaignRunner
     report_builder: ReportBuilder
     using_real_engine: bool = False
+    nvd_client: NvdClient | None = None
     _tasks: set[asyncio.Task] = field(default_factory=set)
 
     def launch_campaign(self, campaign_id: str, config) -> None:

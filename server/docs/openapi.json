@@ -419,6 +419,18 @@
               "default": "md",
               "title": "Format"
             }
+          },
+          {
+            "name": "include_cves",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Correlaciona tecnologias observadas com CVEs publicos (NVD). Pode ser lento.",
+              "default": false,
+              "title": "Include Cves"
+            },
+            "description": "Correlaciona tecnologias observadas com CVEs publicos (NVD). Pode ser lento."
           }
         ],
         "responses": {
@@ -607,6 +619,86 @@
         }
       }
     },
+    "/campaigns/{campaign_id}/agents": {
+      "get": {
+        "summary": "Campaign Agents",
+        "description": "Participacao de cada agente que o Pent convocou nesta campanha.\n\nAgregado a partir de ``Move.recommended_by``/``attack_tactic_id``/``attack_technique_id``,\nja preenchidos pelo runner quando Pent escolhe a recomendacao de um agente (ver\n``app/engine/runner.py:_new_move``). Lances tocados pelo fallback do catalogo (ainda sem\nagente especialista) aparecem agrupados como agente ``\"-\"``.",
+        "operationId": "campaign_agents_campaigns__campaign_id__agents_get",
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentsParticipationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{campaign_id}/cves": {
+      "get": {
+        "summary": "Campaign Cves",
+        "description": "CVEs publicos (NVD) correlacionados as tecnologias REALMENTE observadas na campanha.\n\nSo correlaciona o que um check ja capturou como evidencia (headers Server/\nX-Powered-By, mascarados pela allowlist). Sem evidencia de tecnologia, a\nlista de ``matches`` vem vazia -- nunca ha CVE \"generico\" por categoria de\nachado. Pode ser lento na primeira chamada (consulta externa a NVD); o\nresultado por termo fica em cache por 1h.",
+        "operationId": "campaign_cves_campaigns__campaign_id__cves_get",
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CvesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -654,6 +746,96 @@
         ],
         "title": "AIReview",
         "description": "Parecer do 'juiz' (IA revisora) sobre o comentario da IA."
+      },
+      "AgentParticipation": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "Nome do agente, ex.: 'Recon', 'Collection'. '-' = lance sem agente (fallback do catalogo)."
+          },
+          "tactic_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tactic Id",
+            "description": "Tatica MITRE ATT&CK, ex.: 'TA0043'."
+          },
+          "tactic_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tactic Name"
+          },
+          "moves_recommended": {
+            "type": "integer",
+            "title": "Moves Recommended",
+            "description": "Quantos lances este agente recomendou e foram jogados."
+          },
+          "moves_approved": {
+            "type": "integer",
+            "title": "Moves Approved"
+          },
+          "moves_denied": {
+            "type": "integer",
+            "title": "Moves Denied"
+          },
+          "findings": {
+            "type": "integer",
+            "title": "Findings",
+            "description": "Lances com status fail/warning confirmados (contam no placar)."
+          },
+          "techniques_used": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Techniques Used",
+            "description": "IDs de tecnica MITRE observados, ex.: ['T1595', 'T1213']."
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "tactic_id",
+          "moves_recommended",
+          "moves_approved",
+          "moves_denied",
+          "findings"
+        ],
+        "title": "AgentParticipation",
+        "description": "Participacao de UM agente especialista (Recon, Discovery, etc.) na campanha."
+      },
+      "AgentsParticipationResponse": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "title": "Campaign Id"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentParticipation"
+            },
+            "type": "array",
+            "title": "Agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "agents"
+        ],
+        "title": "AgentsParticipationResponse"
       },
       "Approval": {
         "type": "string",
@@ -1270,6 +1452,172 @@
         ],
         "title": "CurrentMove"
       },
+      "CveMatch": {
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "title": "Search Term",
+            "description": "Termo realmente observado que gerou a busca, ex.: 'nginx 1.14.0'."
+          },
+          "move": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move",
+            "description": "Lance que originou o termo, se houver."
+          },
+          "cves": {
+            "items": {
+              "$ref": "#/components/schemas/CveReference"
+            },
+            "type": "array",
+            "title": "Cves"
+          },
+          "queried_at": {
+            "type": "string",
+            "title": "Queried At"
+          },
+          "source": {
+            "type": "string",
+            "const": "nvd",
+            "title": "Source",
+            "default": "nvd"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Motivo da falha, se a consulta nao completou."
+          }
+        },
+        "type": "object",
+        "required": [
+          "search_term",
+          "queried_at"
+        ],
+        "title": "CveMatch",
+        "description": "Resultado da correlacao para UM termo de busca (ex.: 1 header observado)."
+      },
+      "CveReference": {
+        "properties": {
+          "cve_id": {
+            "type": "string",
+            "title": "Cve Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "cvss_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Score"
+          },
+          "cvss_severity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "LOW",
+                  "MEDIUM",
+                  "HIGH",
+                  "CRITICAL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Severity"
+          },
+          "cvss_vector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Vector"
+          },
+          "cwe_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cwe Ids"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
+          "nvd_url": {
+            "type": "string",
+            "title": "Nvd Url"
+          },
+          "exploits": {
+            "items": {
+              "$ref": "#/components/schemas/ExploitReference"
+            },
+            "type": "array",
+            "title": "Exploits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cve_id",
+          "description",
+          "nvd_url"
+        ],
+        "title": "CveReference",
+        "description": "Um CVE correlacionado a um achado, com dados oficiais da NVD (nunca inventados)."
+      },
+      "CvesResponse": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "title": "Campaign Id"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/CveMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "matches"
+        ],
+        "title": "CvesResponse"
+      },
       "Event": {
         "properties": {
           "seq": {
@@ -1441,6 +1789,32 @@
         ],
         "title": "ExecutiveSummary",
         "description": "Resumo executivo estruturado (JSON) para a tela."
+      },
+      "ExploitReference": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "description": "Dominio/origem da referencia, ex.: 'github.com'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ExploitReference",
+        "description": "Um link de exploit/PoC, so incluido quando a propria NVD o rotula como tal\n(tag ``Exploit`` nas ``references`` do registro CVE)."
       },
       "GameReview": {
         "properties": {
@@ -1684,6 +2058,72 @@
               }
             ]
           },
+          "recommended_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended By"
+          },
+          "attack_tactic_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Tactic Id"
+          },
+          "attack_tactic_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Tactic Name"
+          },
+          "attack_technique_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Technique Id"
+          },
+          "attack_technique_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Technique Name"
+          },
+          "attack_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Url"
+          },
           "verdict": {
             "anyOf": [
               {
@@ -1704,6 +2144,17 @@
               }
             ],
             "title": "Impact"
+          },
+          "exploitation_scenario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exploitation Scenario"
           },
           "reproduce": {
             "items": {

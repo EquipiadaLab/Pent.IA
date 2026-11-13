@@ -52,6 +52,151 @@ A IA agora **joga a partida**. O código continua como **árbitro**. Tudo chega 
 `finding_created` e o próximo `move_planned`, mostre **"A IA está analisando o tabuleiro..."**.
 O primeiro `GET /report` leva ~25 s (treinador + juiz + resumo).
 
+## 0B. Agentes especialistas (Pent + MITRE ATT&CK) — IMPORTANTE, leia antes de montar o "quem participou"
+
+Desde a arquitetura multiagente, cada lance pode ter sido **recomendado por um agente especialista**
+em uma tática do MITRE ATT&CK (Recon, Discovery, InitialAccess, Collection, PrivilegeEscalation,
+Execution, Impact, CredentialAccess — mais táticas chegando). O agente master **Pent** coordena esses
+especialistas, valida a sugestão contra o catálogo fechado e só então o Motor executa (sempre com
+aprovação humana nos testes do `endgame`).
+
+**Se o seu painel está mostrando "0 interação" para os agentes, é porque esses campos abaixo (que já
+existem na API desde antes) ainda não foram consumidos no front.** Eles vêm dentro de cada `Move`:
+
+```json
+{
+  "move": 9,
+  "test_id": "COLLECT-APIFEEDBACK-001",
+  "recommended_by": "Collection",
+  "attack_tactic_id": "TA0009",
+  "attack_tactic_name": "Collection",
+  "attack_technique_id": "T1213",
+  "attack_technique_name": "Data from Information Repositories",
+  "attack_url": "https://attack.mitre.org/techniques/T1213",
+  "exploitation_scenario": "Permite relacionar comentarios publicos a contas especificas...",
+  "...": "demais campos de Move (seção 4.2)"
+}
+```
+
+| Campo novo em `Move` | Comportamento na tela |
+|---|---|
+| `recommended_by` | Nome do agente que sugeriu o lance (ex.: `"Recon"`). **`null` ou `"-"`** = lance veio do fallback do catálogo (ainda sem agente especialista dedicado) |
+| `attack_tactic_id` / `attack_tactic_name` | Tática MITRE ATT&CK (ex.: `"TA0043"` / `"Reconnaissance"`). Selo no card do lance |
+| `attack_technique_id` / `attack_technique_name` | Técnica MITRE (ex.: `"T1595"` / `"Active Scanning"`) |
+| `attack_url` | Link oficial `attack.mitre.org` da técnica — abra em nova aba |
+| `exploitation_scenario` | Texto explicando como um atacante se aproveitaria da falha (só em achados `fail`/`warning`). Mostre junto de `recommendation` no painel de detalhe |
+
+**Sugestão de UI:** no card do lance, mostre um selo com o nome do agente + ícone da tática
+(ex.: "🔎 Recon · Reconnaissance"). Isso é o que prova visualmente que "vários agentes jogaram",
+não só o Pent.
+
+### Novo endpoint: `GET /campaigns/{id}/agents` — participação agregada
+
+Pensado exatamente para a tela "Agentes" (lista com quantos lances cada um jogou, achados
+confirmados e técnicas MITRE usadas) — **sem precisar agregar isso manualmente no front**.
+
+```json
+{
+  "campaign_id": "a9c3bfcb4db84ce5ac0a048cfc6870cb",
+  "agents": [
+    { "agent": "Recon", "tactic_id": "TA0043", "tactic_name": "Reconnaissance",
+      "moves_recommended": 7, "moves_approved": 7, "moves_denied": 0,
+      "findings": 1, "techniques_used": ["T1594", "T1595"] },
+    { "agent": "Discovery", "tactic_id": "TA0007", "tactic_name": "Discovery",
+      "moves_recommended": 1, "moves_approved": 1, "moves_denied": 0,
+      "findings": 0, "techniques_used": ["T1518"] },
+    { "agent": "Collection", "tactic_id": "TA0009", "tactic_name": "Collection",
+      "moves_recommended": 3, "moves_approved": 3, "moves_denied": 0,
+      "findings": 1, "techniques_used": ["T1213"] },
+    { "agent": "CredentialAccess", "tactic_id": "TA0006", "tactic_name": "Credential Access",
+      "moves_recommended": 1, "moves_approved": 1, "moves_denied": 0,
+      "findings": 1, "techniques_used": ["T1212"] },
+    { "agent": "-", "tactic_id": null, "tactic_name": null,
+      "moves_recommended": 9, "moves_approved": 9, "moves_denied": 0,
+      "findings": 4, "techniques_used": [] }
+  ]
+}
+```
+
+| Campo | Comportamento na tela |
+|---|---|
+| `agent` | Nome do agente. `"-"` = lances do catálogo ainda sem agente especialista dedicado (ex.: headers, cookies, CORS) — mostre como "Motor (regras)" em vez de "-" |
+| `tactic_id` / `tactic_name` | Selo da tática MITRE daquele agente |
+| `moves_recommended` | Quantos lances aquele agente sugeriu nesta campanha (barra/contador) |
+| `moves_approved` / `moves_denied` | Quantos foram aprovados vs. negados pelo humano |
+| `findings` | Quantos lances deram `fail`/`warning` **confirmados** (não descartados) — "achados" daquele agente |
+| `techniques_used` | Lista de IDs de técnica MITRE observados (ex.: `["T1595", "T1594"]`) — chips clicáveis para `attack.mitre.org/techniques/{id}` |
+
+Chame esse endpoint junto com `GET /campaigns/{id}/report`, quando a campanha terminar (ou a
+qualquer momento, para mostrar progresso parcial por agente).
+
+## 0C. CVEs e exploits conhecidos (NVD) — sugestão do mentor
+
+Correlaciona a(s) tecnologia(s) **realmente observada(s)** na campanha (cabeçalhos `Server`/
+`X-Powered-By`, capturados por `INFO-001`/Discovery) com a base pública **NVD** (National
+Vulnerability Database, NIST). Nunca inventa CVE: se nenhum lance capturou um header de
+tecnologia identificável, ou a NVD não retornar nada para o termo, a lista vem vazia —
+**não existe "CVE genérico por categoria de achado"**.
+
+CDNs/proxies conhecidos (`cloudflare`, `akamai`, `fastly`, `varnish`...) são **ignorados** na
+correlação: eles descrevem a borda de rede, não o software de origem, e usá-los geraria CVEs
+de produtos completamente não relacionados ao alvo.
+
+### Novo endpoint: `GET /campaigns/{id}/cves`
+
+```json
+{
+  "campaign_id": "a9c3bfcb4db84ce5ac0a048cfc6870cb",
+  "matches": [
+    {
+      "search_term": "Express",
+      "move": 2,
+      "cves": [
+        {
+          "cve_id": "CVE-2024-29041",
+          "description": "Express.js minimal web framework... open redirect...",
+          "cvss_score": 6.1,
+          "cvss_severity": "MEDIUM",
+          "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+          "cwe_ids": ["CWE-601"],
+          "published": "2024-03-25T21:15:08.527",
+          "nvd_url": "https://nvd.nist.gov/vuln/detail/CVE-2024-29041",
+          "exploits": [
+            { "url": "https://github.com/x/poc-express-open-redirect", "source": "github.com" }
+          ]
+        }
+      ],
+      "queried_at": "2026-11-13T04:19:37.19Z",
+      "source": "nvd",
+      "error": null
+    }
+  ]
+}
+```
+
+| Campo | Comportamento na tela |
+|---|---|
+| `matches[].search_term` | A tecnologia observada que gerou a busca (ex.: `"Express"`) — mostre como título da seção |
+| `matches[].move` | Lance que capturou esse header; link para o card correspondente |
+| `matches[].cves[]` | Lista ordenada por CVSS (maior primeiro). Vazio = NVD não tem CVE conhecido para esse termo |
+| `cve_id` | Selo clicável → `nvd_url` (abre `nvd.nist.gov`) |
+| `cvss_score` / `cvss_severity` | Selo colorido: `CRITICAL`/`HIGH` vermelho, `MEDIUM` amarelo, `LOW` cinza |
+| `cwe_ids` | Chips pequenos (ex.: `CWE-601`), opcional link para `cwe.mitre.org/data/definitions/{n}.html` |
+| `exploits[]` | **Se não vazio**, destaque com ícone de alerta: "⚠️ Exploit público conhecido" + link. Vem vazio na maioria dos CVEs — só aparece quando a própria NVD referencia um PoC/exploit |
+| `error` | Se preenchido, a consulta à NVD falhou (rede/timeout) — mostre "Não foi possível consultar a NVD agora" sem detalhes técnicos |
+
+Pode ser **lento na primeira chamada** (consulta externa, ~1–3 s por tecnologia observada);
+resultados ficam em cache no servidor por 1h. Mostre um spinner "Consultando base de
+vulnerabilidades (NVD)...".
+
+### No relatório exportado (Markdown/PDF)
+
+`GET /campaigns/{id}/report/export?format=md&include_cves=true` (ou `format=pdf`) inclui uma
+seção **"CVEs e exploits conhecidos (NVD)"** entre o resumo executivo e os achados, com o mesmo
+conteúdo do endpoint acima já formatado. Sem o parâmetro `include_cves=true`, o relatório sai
+igual a antes (mais rápido, sem chamada externa) — use esse parâmetro só quando o usuário clicar
+em algo como **"Gerar relatório com CVEs"**.
+
 **No card do lance**, mostre o plano antes do resultado:
 > **Hipótese:** {plan.hypothesis} · **Esperado:** {plan.expected_result} · **Por quê:** {plan.rationale}
 > Selo: `IA` se `plan.source = "ai"`, `Regras` se `"rules"`.
@@ -85,9 +230,11 @@ Os títulos dos testes passaram a ser neutros (ex.: "Exposicao do repositorio .g
 | 12 | **WS** | `/campaigns/{id}/ws?since=N` | **Ao vivo por WebSocket** (recomendado) | stream de `Event` |
 | 13 | GET | `/campaigns/{id}/audit` | **Trilha de auditoria** cronológica (item 8) | 200 `TimelineEntry[]` |
 | 14 | GET | `/status` | **Painel "sistema no ar"**: API, banco, motor e IA | 200 `StatusResponse` |
-| 15 | GET | `/catalog` | Os 14 testes que o agente pode jogar (o "tabuleiro") | 200 `CatalogTest[]` |
+| 15 | GET | `/catalog` | Todos os testes que o agente pode jogar (o "tabuleiro"; o total cresce conforme mais agentes são adicionados — confira `/status` para o número atual) | 200 `CatalogTest[]` |
 | 16 | GET | `/scope` | Regras de engajamento do servidor (alvos autorizados, limites, pré-aprovação) | 200 `ScopeResponse` |
 | 17 | GET | `/campaigns/{id}/status` | Progresso resumido da partida (barra de progresso, pendências) | 200 `CampaignStatusResponse` |
+| 18 | GET | `/campaigns/{id}/agents` | **Tela "Agentes"**: participação de Pent/Recon/Discovery/etc. (ver seção 0B) | 200 `AgentsParticipationResponse` |
+| 19 | GET | `/campaigns/{id}/cves` | **CVEs e exploits conhecidos** (NVD), correlacionados a tecnologia observada (ver seção 0C) | 200 `CvesResponse` |
 
 Não há endpoint separado de auditoria: ela vem em `GET /report` → `audit`.
 
@@ -255,7 +402,7 @@ Saúde detalhada. **Rápido** por padrão (não chama a IA).
   "components": {
     "api":      { "status": "ok",  "detail": null, "latency_ms": null },
     "database": { "status": "ok",  "detail": null, "latency_ms": 0 },
-    "engine":   { "status": "ok",  "detail": "14 testes no catalogo", "latency_ms": null },
+    "engine":   { "status": "ok",  "detail": "N testes no catalogo (N cresce conforme agentes sao adicionados)", "latency_ms": null },
     "llm":      { "status": "ok",  "detail": "Bedrock respondeu", "latency_ms": 1553 }
   },
   "campaigns": { "total": 3, "created": 0, "running": 1, "waiting_approval": 0, "stopped": 0, "finished": 2, "failed": 0 }
@@ -524,22 +671,14 @@ Exemplo real:
 | `reproduce` | Lista de comandos `curl` — bloco de código com botão copiar ("Como reproduzir") |
 | `ai_review` | `approved` → mostrar `ai_explanation` com selo "revisado pelo juiz". `rejected` → `ai_explanation` vem `null`; opcionalmente mostre "comentário da IA reprovado" + `issues` |
 
-#### Quem recomendou o lance + MITRE ATT&CK (no `Move`)
-Cada lance pode trazer qual agente especialista o recomendou e para qual tática/técnica do [MITRE ATT&CK](https://attack.mitre.org/) ele mapeia. Campos **opcionais** — se `null`, não mostre o selo. Hoje preenchidos por `Recon` e `Discovery`; conforme a equipe liga mais agentes, os mesmos campos passam a trazer outras táticas, **sem mudar o contrato**.
-```json
-"recommended_by": "Recon",
-"attack_tactic_id": "TA0043",
-"attack_tactic_name": "Reconnaissance",
-"attack_technique_id": "T1595",
-"attack_technique_name": "Active Scanning",
-"attack_url": "https://attack.mitre.org/techniques/T1595"
-```
+#### Campos do agente especialista que recomendou o lance (ver seção 0B)
 | Campo | Comportamento |
 |---|---|
-| `recommended_by` | string \| null — nome do agente ("Recon", "Discovery"). Selo "Recomendado por: Recon" |
-| `attack_tactic_id` / `attack_tactic_name` | string \| null — tática ATT&CK (ex.: `TA0043` / `Reconnaissance`). Selo de tática |
-| `attack_technique_id` / `attack_technique_name` | string \| null — técnica (ex.: `T1595` / `Active Scanning`) |
-| `attack_url` | string \| null — link oficial do MITRE. Use no selo da técnica (abre em nova aba) |
+| `recommended_by` | Nome do agente (ex.: `"Recon"`). `null`/`"-"` = fallback do catálogo |
+| `attack_tactic_id` / `attack_tactic_name` | Tática MITRE (ex.: `"TA0043"` / `"Reconnaissance"`) — selo no card |
+| `attack_technique_id` / `attack_technique_name` | Técnica MITRE (ex.: `"T1595"` / `"Active Scanning"`) |
+| `attack_url` | Link oficial da técnica em `attack.mitre.org` |
+| `exploitation_scenario` | Como um atacante exploraria a falha, em linguagem simples (achados `fail`/`warning`) |
 
 ### 4.3 `Evidence`
 ```json

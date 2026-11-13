@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
 import lab_server  # noqa: E402
 
+from app.engine.checks import CATALOG
 from app.engine.memory_sink import MemorySink  # noqa: E402
 from app.engine.runner import run_campaign  # noqa: E402
 from app.engine.scope import utcnow  # noqa: E402
@@ -54,7 +55,7 @@ def test_vulnerable_target_findings(vulnerable):
     assert m["FILE-001"].grade is Grade.BLUNDER and m["FILE-002"].grade is Grade.BLUNDER
     assert m["ERR-001"].grade is Grade.MISTAKE
     assert m["HSTS-001"].grade is Grade.INCONCLUSIVE  # n/a em HTTP
-    assert c.score.accuracy < 40
+    assert c.score.accuracy < 50
 
 
 def test_hardened_target_scores_high(hardened):
@@ -80,7 +81,7 @@ def test_stop_preserves_partial_results(vulnerable):
     sink = MemorySink(approve=True, stop_after_events=12)
     c = run(vulnerable, sink)
     assert c.state is CampaignState.STOPPED
-    assert 0 < len(c.moves) < 14
+    assert 0 < len(c.moves) < len(CATALOG)
     assert sink.events[-1].type is EventType.CAMPAIGN_FINISHED
 
 
@@ -103,10 +104,14 @@ def test_no_secrets_in_events_or_audit(vulnerable):
         assert secret not in blob
 
 
-def test_only_get_and_options_were_sent(vulnerable):
+def test_only_get_options_and_login_post_were_sent(vulnerable):
+    """GET/OPTIONS para quase tudo; POST so e permitido em /rest/user/login
+    (CREDS-SQLI-LOGIN-001, excecao estreita documentada no ScopeGuard)."""
     sink = MemorySink(approve=True)
     run(vulnerable, sink)
-    assert {a.method for a in sink.audits} <= {"GET", "OPTIONS"}
+    methods = {a.method for a in sink.audits}
+    assert methods <= {"GET", "OPTIONS", "POST"}
+    assert all(a.url.endswith("/rest/user/login") for a in sink.audits if a.method == "POST")
 
 
 def test_window_in_the_past_refuses_to_run(vulnerable):

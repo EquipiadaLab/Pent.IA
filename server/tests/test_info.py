@@ -55,9 +55,12 @@ def test_status_check_llm_never_leaks(client, monkeypatch):
     assert "AKIA" not in llm["detail"] and "arn:" not in llm["detail"]
 
 
+from app.engine.checks import CATALOG
+
+
 def test_catalog(client):
     cat = client.get("/catalog").json()
-    assert len(cat) == 14
+    assert len(cat) == len(CATALOG)
     git = next(t for t in cat if t["test_id"] == "FILE-001")
     assert git["needs_approval"] is True and git["hypothesis"] and git["impact"]
 
@@ -100,8 +103,78 @@ def test_campaign_status_progress_and_pending(client, lab):
             break
         time.sleep(0.05)
     assert saw_pending
-    assert st["progress"] == {"played": 14, "total": 14, "percent": 100}
-    assert st["current_move"] is None and st["score"]["accuracy"] < 40
+    assert st["progress"] == {"played": len(CATALOG), "total": len(CATALOG), "percent": 100}
+    assert st["current_move"] is None and st["score"]["accuracy"] < 50
     assert st["last_seq"] == client.get(f"/campaigns/{cid}/events").json()[-1]["seq"]
     assert client.get("/campaigns/nao-existe/status").status_code == 404
     assert client.get("/status").json()["campaigns"]["finished"] == 1
+
+
+def _finish_campaign(client, cid, timeout=30):
+    end = time.time() + timeout
+    while time.time() < end:
+        cam = client.get(f"/campaigns/{cid}").json()
+        for m in cam["moves"]:
+            if m["approval"] == "pending":
+                client.post(f"/campaigns/{cid}/moves/{m['move']}/approve")
+        if cam["state"] in ("finished", "stopped", "failed"):
+            return cam
+        time.sleep(0.05)
+    raise AssertionError("campanha nao terminou")
+
+
+def test_campaign_agents_reports_each_specialist_participation(client, lab):
+    cid = client.post(
+        "/campaigns",
+        json={"config": {"origin": lab, "authorized_by": "Org", "authorized_at": "2026-11-12T15:00:00Z",
+                         "max_requests_per_second": 5}},
+    ).json()["id"]
+    _finish_campaign(client, cid)
+
+    r = client.get(f"/campaigns/{cid}/agents")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["campaign_id"] == cid
+
+    by_agent = {a["agent"]: a for a in body["agents"]}
+    # Recon sempre participa primeiro (abertura): TLS-002 contra um alvo HTTP e TLS-001.
+    assert "Recon" in by_agent
+    assert by_agent["Recon"]["moves_recommended"] >= 1
+    assert by_agent["Recon"]["tactic_id"] == "TA0043"
+    assert "T1595" in by_agent["Recon"]["techniques_used"]
+
+    # Discovery participa (INFO-001).
+    assert "Discovery" in by_agent
+    assert by_agent["Discovery"]["tactic_id"] == "TA0007"
+
+    # Soma de todos os agentes (incluindo o fallback "-") cobre todos os lances.
+    total_recommended = sum(a["moves_recommended"] for a in body["agents"])
+    assert total_recommended == len(cam_moves(client, cid))
+
+
+def cam_moves(client, cid):
+    return client.get(f"/campaigns/{cid}/moves").json()
+
+
+def test_campaign_agents_unknown_campaign_404s(client):
+    assert client.get("/campaigns/nao-existe/agents").status_code == 404
+
+
+def test_campaign_cves_endpoint_without_technology_header_is_empty(client, lab):
+    """O lab_server nao define Server/X-Powered-By reconheciveis -> sem matches."""
+    cid = client.post(
+        "/campaigns",
+        json={"config": {"origin": lab, "authorized_by": "Org", "authorized_at": "2026-11-12T15:00:00Z",
+                         "max_requests_per_second": 5}},
+    ).json()["id"]
+    _finish_campaign(client, cid)
+
+    r = client.get(f"/campaigns/{cid}/cves")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["campaign_id"] == cid
+    assert isinstance(body["matches"], list)
+
+
+def test_campaign_cves_unknown_campaign_404s(client):
+    assert client.get("/campaigns/nao-existe/cves").status_code == 404

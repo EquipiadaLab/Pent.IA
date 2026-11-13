@@ -41,13 +41,14 @@ DISCOVERY_TECHNIQUES: tuple[DiscoveryTechnique, ...] = (
         test_id="INFO-001",
         technique_id="T1518",
         base_priority=90,
-        # INFO-001 reutiliza a observacao-base ja obrigatoria da campanha.
-        request_cost=0,
+        # A observacao-base so ocorre depois da aprovacao humana do lance;
+        # por isso este check pode consumir uma requisicao GET segura.
+        request_cost=1,
         risk="low",
         expected_value="medium",
         rationale=(
             "Avaliar identificadores de software publicados em cabecalhos HTTP, "
-            "sem criar novas requisicoes nem inferir inventario do host."
+            "em uma requisicao GET previamente aprovada, sem inferir inventario do host."
         ),
         applies=_always,
     ),

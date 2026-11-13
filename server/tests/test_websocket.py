@@ -12,6 +12,8 @@ from starlette.websockets import WebSocketDisconnect
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
 import lab_server  # noqa: E402
 
+from app.engine.checks import CATALOG
+
 NOW = "2026-11-12T15:00:00Z"
 
 
@@ -68,7 +70,7 @@ def test_ws_streams_same_events_as_polling_and_closes(client, lab):
     assert [e["seq"] for e in got] == sorted(e["seq"] for e in got)
     polled = client.get(f"/campaigns/{cid}/events").json()
     assert got == polled  # JSON identico ao polling
-    assert sum(e["type"] == "finding_created" for e in got) == 14
+    assert sum(e["type"] == "finding_created" for e in got) == len(CATALOG)
 
 
 def test_ws_resume_with_since(client, lab):
