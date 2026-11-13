@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.agents.Collection.collection_agent import CollectionAgent
 from app.agents.Discovery.discovery_agent import DiscoveryAgent
 from app.agents.InitialAccess.initial_access_agent import InitialAccessAgent
 from app.agents.Recon.recon_agent import ReconAgent
@@ -33,6 +34,7 @@ def test_pent_registra_initial_access_e_preserva_validacao(monkeypatch) -> None:
     monkeypatch.setattr(ReconAgent, "recommend", lambda self, ctx: [])
     monkeypatch.setattr(DiscoveryAgent, "recommend", lambda self, ctx: [])
     monkeypatch.setattr(InitialAccessAgent, "recommend", lambda self, ctx: [_recommendation()])
+    monkeypatch.setattr(CollectionAgent, "recommend", lambda self, ctx: [])
 
     decision = Pent().choose_next(
         TacticDecisionContext(
@@ -53,6 +55,7 @@ def test_pent_descarta_recomendacao_initial_access_fora_da_lista(monkeypatch) ->
     monkeypatch.setattr(ReconAgent, "recommend", lambda self, ctx: [])
     monkeypatch.setattr(DiscoveryAgent, "recommend", lambda self, ctx: [])
     monkeypatch.setattr(InitialAccessAgent, "recommend", lambda self, ctx: [_recommendation()])
+    monkeypatch.setattr(CollectionAgent, "recommend", lambda self, ctx: [])
 
     decision = Pent().choose_next(
         TacticDecisionContext(

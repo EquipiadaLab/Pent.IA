@@ -97,7 +97,7 @@ def test_campaign_status_progress_and_pending(client, lab):
         time.sleep(0.05)
     assert saw_pending
     assert st["progress"] == {"played": len(CATALOG), "total": len(CATALOG), "percent": 100}
-    assert st["current_move"] is None and st["score"]["accuracy"] < 40
+    assert st["current_move"] is None and st["score"]["accuracy"] < 50
     assert st["last_seq"] == client.get(f"/campaigns/{cid}/events").json()[-1]["seq"]
     assert client.get("/campaigns/nao-existe/status").status_code == 404
     assert client.get("/status").json()["campaigns"]["finished"] == 1

@@ -4,7 +4,7 @@ Adicionar um lance = acrescentar um CheckSpec aqui. O agente (e a IA) so
 escolhe lances deste catalogo: nunca cria requisicoes novas.
 """
 
-from app.engine.checks import active, cookies, headers, recon, transport
+from app.engine.checks import active, collection, cookies, headers, privesc, recon, transport
 from app.engine.checks.base import CheckSpec
 from app.models import Phase, Profile, Severity
 
@@ -93,6 +93,21 @@ CATALOG: list[CheckSpec] = [
           hyp="O servidor pode anunciar metodos desnecessarios (TRACE, PUT, DELETE).",
           exp="Apenas os metodos usados pela aplicacao (ex.: GET, POST, OPTIONS).",
           imp="Metodos sobrando ampliam a superficie de ataque; TRACE pode ajudar a roubar cabecalhos."),
+    _spec("COLLECT-FTP-001", "Listagem de arquivos em /ftp", P.MIDDLEGAME, ACTIVE, MED, "WSTG-CONF-04",
+          "A01:2025", collection.ftp_directory_listing,
+          hyp="A rota /ftp pode expor listagem de arquivos sem exigir autenticacao.",
+          exp="/ftp nao expoe listagem de diretorio.",
+          imp="Arquivos internos (documentos, notas) ficam disponiveis para qualquer visitante nao autenticado."),
+    _spec("COLLECT-APIUSERS-001", "Dados de usuarios sem autenticacao", P.MIDDLEGAME, ACTIVE, H, "WSTG-ATHZ-01",
+          "A01:2025", collection.public_user_data,
+          hyp="A API de usuarios pode responder registros sem exigir uma sessao autenticada.",
+          exp="/api/Users/ exige autenticacao ou nao retorna registros.",
+          imp="Dados de usuarios (nomes, papeis, e-mails) ficam disponiveis para qualquer visitante nao autenticado."),
+    _spec("COLLECT-APIFEEDBACK-001", "Identificadores de usuario em feedback publico", P.MIDDLEGAME, ACTIVE, MED,
+          "WSTG-ATHZ-01", "A01:2025", collection.public_feedback_data,
+          hyp="A API de feedback pode expor o identificador do autor sem exigir autenticacao.",
+          exp="/api/Feedbacks/ nao associa registros a identificadores de usuario sem sessao.",
+          imp="Permite relacionar comentarios publicos a contas especificas, facilitando engenharia social."),
     # --- Final (ativo leve, com aprovacao humana) ---
     _spec("FILE-001", "Exposicao do repositorio .git", P.ENDGAME, ACTIVE, H, "WSTG-CONF-04", "A02:2025",
           active.git_exposed, approval=True,
@@ -109,6 +124,11 @@ CATALOG: list[CheckSpec] = [
           hyp="Erros podem mostrar stack trace, caminhos de arquivos ou consultas SQL.",
           exp="Pagina de erro generica (404) sem detalhes internos.",
           imp="Detalhes internos ajudam o atacante a mapear tecnologias, arquivos e consultas da aplicacao."),
+    _spec("AUTHZ-001", "Acesso a recurso privilegiado sem autorizacao", P.ENDGAME, ACTIVE, H,
+          "WSTG-ATHZ-02", "A01:2025", privesc.unauthorized_privileged_access, approval=True,
+          hyp="Endpoints privilegiados conhecidos podem responder a um cliente anonimo.",
+          exp="Recursos privilegiados exigem autenticacao/autorizacao (401/403) e nao expoem dados.",
+          imp="Acesso anonimo a dados/funcao privilegiada e quebra de controle de acesso: um visitante age como usuario de maior privilegio."),
 ]
 
 CATALOG_BY_ID: dict[str, CheckSpec] = {c.test_id: c for c in CATALOG}

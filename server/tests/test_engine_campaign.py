@@ -55,7 +55,7 @@ def test_vulnerable_target_findings(vulnerable):
     assert m["FILE-001"].grade is Grade.BLUNDER and m["FILE-002"].grade is Grade.BLUNDER
     assert m["ERR-001"].grade is Grade.MISTAKE
     assert m["HSTS-001"].grade is Grade.INCONCLUSIVE  # n/a em HTTP
-    assert c.score.accuracy < 40
+    assert c.score.accuracy < 50
 
 
 def test_hardened_target_scores_high(hardened):

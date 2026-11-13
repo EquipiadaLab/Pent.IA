@@ -58,6 +58,16 @@ def make_handler(hardened: bool):
                 return self._send(200, "ref: refs/heads/main\n", "text/plain")
             if not hardened and path == "/.env":
                 return self._send(200, "SECRET_KEY=s3cr3t\nDB_PASSWORD=hunter2\n", "text/plain")
+            if path == "/api/Users":
+                # Quebra de controle de acesso proposital: lista de usuarios a
+                # um cliente anonimo no alvo vulneravel; exige login no corrigido.
+                if hardened:
+                    return self._send(401, '{"error":"unauthorized"}', "application/json")
+                return self._send(
+                    200,
+                    '[{"id":1,"email":"admin@lab.local","role":"admin"}]',
+                    "application/json",
+                )
             if hardened:
                 return self._send(404, "Not found")
             return self._send(500, 'Traceback (most recent call last):\n  File "app.py", line 1, in <module>\n', "text/plain")

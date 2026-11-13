@@ -12,8 +12,10 @@ nao concede permissao a si proprio. Sua saida e uma recomendacao de um
 
 from __future__ import annotations
 
+from app.agents.Collection.collection_agent import CollectionAgent
 from app.agents.Discovery.discovery_agent import DiscoveryAgent
 from app.agents.InitialAccess.initial_access_agent import InitialAccessAgent
+from app.agents.PrivilegeEscalation.privilege_escalation_agent import PrivilegeEscalationAgent
 from app.agents.Recon.recon_agent import ReconAgent
 from app.agents.base_agent import BaseTacticAgent
 from app.engine.checks import CATALOG_BY_ID
@@ -33,7 +35,13 @@ class Pent:
         self._agents = (
             agents
             if agents is not None
-            else [ReconAgent(), DiscoveryAgent(), InitialAccessAgent()]
+            else [
+                ReconAgent(),
+                DiscoveryAgent(),
+                InitialAccessAgent(),
+                CollectionAgent(),
+                PrivilegeEscalationAgent(),
+            ]
         )
 
     def choose_next(self, context: TacticDecisionContext) -> PentDecision:

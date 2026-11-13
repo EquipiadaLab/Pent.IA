@@ -70,7 +70,7 @@ def test_approved_moves_keep_result_and_events_not_duplicated(client, lab):
     resolved = [e for e in ev if e["type"] == "approval_resolved"]
     assert all(e["data"]["move"] and e["data"]["approval"] == "approved" and e["data"]["actor"] for e in resolved)
     assert all(e["data"].get("move") for e in ev if e["type"] == "approval_requested")
-    assert cam["score"] and cam["score"]["accuracy"] < 40
+    assert cam["score"] and cam["score"]["accuracy"] < 50
 
 
 def test_early_approval_does_not_409(client, lab):
