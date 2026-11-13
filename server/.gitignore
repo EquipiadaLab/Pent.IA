@@ -9,4 +9,3 @@ reports/
 *.db-shm
 *.db-wal
 *.db-journal
-app/attack_mitre/attack_cache.json
