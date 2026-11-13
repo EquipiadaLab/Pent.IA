@@ -43,14 +43,26 @@ def default_target() -> str:
     return raw
 
 
+def locked_target() -> str | None:
+    """Alvo UNICO travado. Se ``LOCKED_TARGET`` estiver no .env, o sistema so
+    testa esse endereco: qualquer outra URL enviada pelo front e recusada, e
+    origin vazio usa este alvo. E a trava mais forte (acima da lista)."""
+    raw = (os.getenv("LOCKED_TARGET") or "").strip()
+    if not raw:
+        return None
+    if "://" not in raw:
+        raw = "https://" + raw
+    return raw
+
+
 def authorized_origins() -> set[str]:
     raw = os.getenv("AUTHORIZED_TARGETS", "")
     return {o for o in (normalize_origin(x) for x in raw.split(",") if x.strip()) if o}
 
 
 def accepts_any_target() -> bool:
-    """True = modo aberto (sem lista fixa)."""
-    return not authorized_origins()
+    """True = modo aberto (sem alvo travado e sem lista fixa)."""
+    return locked_target() is None and not authorized_origins()
 
 
 def _block_private() -> bool:
@@ -100,6 +112,12 @@ def authorization_error(url: str) -> str | None:
     origin = normalize_origin(url)
     if origin is None:
         return "URL invalida (use http:// ou https:// com host valido)."
+
+    locked = locked_target()
+    if locked:  # trava mais forte: so o alvo travado passa
+        if normalize_origin(locked) == origin:
+            return None
+        return f"Alvo travado: este sistema so testa {locked}."
 
     allowed = authorized_origins()
     if allowed:  # modo lista fixa

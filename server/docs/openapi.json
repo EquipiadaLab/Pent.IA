@@ -2373,6 +2373,18 @@
       },
       "ScopeResponse": {
         "properties": {
+          "locked_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Target",
+            "description": "Se preenchido, o sistema SO testa este alvo (trava forte)"
+          },
           "authorized_targets": {
             "items": {
               "type": "string"
@@ -2383,7 +2395,7 @@
           "accepts_any_target": {
             "type": "boolean",
             "title": "Accepts Any Target",
-            "description": "True = modo aberto (qualquer URL publica); False = so a lista"
+            "description": "True = modo aberto (qualquer URL publica); False = travado/lista"
           },
           "default_target": {
             "anyOf": [
@@ -2436,6 +2448,7 @@
         },
         "type": "object",
         "required": [
+          "locked_target",
           "authorized_targets",
           "accepts_any_target",
           "default_target",
