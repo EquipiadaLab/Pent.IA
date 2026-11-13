@@ -20,10 +20,18 @@ from app.models import (
     Campaign,
     CampaignConfig,
     CampaignState,
+    Evidence,
+    GameReview,
     Grade,
+    Move,
+    Phase,
+    Profile,
+    Severity,
+    Status,
+    Verdict,
 )
 from app.reporter import ReportBuilder, TemplateLLMClient
-from app.report import to_markdown
+from app.report import PDF_AVAILABLE, to_markdown, to_pdf
 from app.sink import ApprovalNotPending, Coordinator
 
 
@@ -154,3 +162,54 @@ def test_mascaramento_unitario() -> None:
     assert headers["Authorization"] == "***"
     assert headers["Server"] == "nginx"
     assert "token123" not in (mask_text("api_key=token123") or "")
+
+
+def test_detailed_report_shows_evidence_impact_and_remediation() -> None:
+    """O PDF/Markdown deve explicar o achado, sem virar guia de exploracao."""
+    finding = Move(
+        move=1,
+        test_id="REDIR-001",
+        title="Redirecionamento HTTP para HTTPS",
+        phase=Phase.OPENING,
+        profile=Profile.PASSIVE,
+        status=Status.FAIL,
+        severity=Severity.MEDIUM,
+        grade=Grade.MISTAKE,
+        approval=Approval.APPROVED,
+        verdict=Verdict.CONFIRMED,
+        recommended_by="Recon",
+        attack_tactic_id="TA0043",
+        attack_tactic_name="Reconnaissance",
+        attack_technique_id="T1595",
+        attack_technique_name="Active Scanning",
+        attack_url="https://attack.mitre.org/techniques/T1595",
+        explanation="A origem HTTP respondeu sem redirecionar para HTTPS.",
+        impact="Uma conexao HTTP pode ser observada ou alterada em uma rede comprometida.",
+        exploitation_scenario="Um invasor em uma rede insegura pode tentar interferir no trafego HTTP antes da protecao HTTPS.",
+        recommendation="Redirecionar HTTP para HTTPS com status 301 e habilitar HSTS.",
+        evidence=[Evidence(id="ev-1-1", request="GET / HTTP/1.1", response_status=200)],
+    )
+    campaign = Campaign(
+        id="report-detail",
+        config=_config(),
+        state=CampaignState.FINISHED,
+        created_at=datetime.now(timezone.utc),
+        moves=[finding],
+    )
+    review = GameReview(campaign=campaign, executive_summary="Um risco de transporte foi confirmado.")
+
+    markdown = to_markdown(review)
+    for text in (
+        "Achados prioritarios e recomendacoes",
+        "O que foi encontrado",
+        "Evidencia observada",
+        "Como esta configuracao pode ser aproveitada",
+        "Melhor jogada: como corrigir",
+        "Confirmado em segunda observacao independente",
+        "TA0043",
+        "Redirecionar HTTP para HTTPS",
+    ):
+        assert text in markdown
+
+    if PDF_AVAILABLE:
+        assert to_pdf(review).startswith(b"%PDF")

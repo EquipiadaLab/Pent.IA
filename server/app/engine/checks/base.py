@@ -44,6 +44,7 @@ class CheckSpec:
     hypothesis: str = ""  # hipotese padrao (reserva se a IA nao planejar)
     expected: str = ""  # resultado esperado de um site seguro
     impact: str = ""  # impacto se o problema existir
+    exploitation_scenario: str = ""  # explicacao segura para o relatorio
 
 
 class CheckContext:

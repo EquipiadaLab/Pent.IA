@@ -204,6 +204,9 @@ class Move(BaseModel):
     attack_url: str | None = None
     verdict: Verdict | None = None  # so para achados (warning/fail): confirmado/descartado/inconclusivo
     impact: str | None = None  # impacto se o problema for explorado
+    # Explicacao segura, baseada na regra do check, de como uma configuracao
+    # fraca poderia ser aproveitada. Nunca contem payloads ou comandos.
+    exploitation_scenario: str | None = None
     reproduce: list[str] = Field(default_factory=list)  # passos de reproducao (comandos curl)
     ai_review: AIReview | None = None  # juiz aprovou/rejeitou o ai_explanation
 
