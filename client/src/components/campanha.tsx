@@ -75,6 +75,30 @@ export default function Campanha() {
     const [notice, setNotice] = useState("");
     const [showReport, setShowReport] = useState(false);
     const [showCves, setShowCves] = useState(false);
+    // UX: a Revisão/CVEs aparecem abaixo do tabuleiro, fora da tela. Ao clicar,
+    // rolamos até a seção (o nonce garante a rolagem mesmo se já estiver aberta).
+    const reportSectionRef = useRef<HTMLDivElement>(null);
+    const cvesSectionRef = useRef<HTMLDivElement>(null);
+    const [scrollTarget, setScrollTarget] = useState<{
+        section: "report" | "cves";
+        nonce: number;
+    } | null>(null);
+    useEffect(() => {
+        if (!scrollTarget) return;
+        const el =
+            scrollTarget.section === "report"
+                ? reportSectionRef.current
+                : cvesSectionRef.current;
+        if (!el) return;
+        const id = window.requestAnimationFrame(() => {
+            el.scrollIntoView({
+                behavior: reduce ? "auto" : "smooth",
+                block: "start",
+            });
+            el.focus({ preventScroll: true });
+        });
+        return () => window.cancelAnimationFrame(id);
+    }, [scrollTarget, reduce]);
     // Piloto automático: aprova sozinho os lances menos graves e só segura os
     // de severidade "high" (os mais graves) para decisão humana.
     const [autoPilot, setAutoPilot] = useState(false);
@@ -744,10 +768,16 @@ export default function Campanha() {
                                     : ""
                             }
                             canOpenReport={campaignIsTerminal}
-                            onOpenReport={() => setShowReport(true)}
+                            onOpenReport={() => {
+                                setShowReport(true);
+                                setScrollTarget({ section: "report", nonce: Date.now() });
+                            }}
                             canGenerateCves={campaignIsTerminal}
                             isGeneratingCves={showCves && cvesQuery.isFetching}
-                            onGenerateCves={() => setShowCves(true)}
+                            onGenerateCves={() => {
+                                setShowCves(true);
+                                setScrollTarget({ section: "cves", nonce: Date.now() });
+                            }}
                         />
                     </motion.div>
 
@@ -755,6 +785,10 @@ export default function Campanha() {
                         {campaignIsTerminal && showReport && (
                             <motion.div
                                 key="report"
+                                ref={reportSectionRef}
+                                tabIndex={-1}
+                                aria-live="polite"
+                                className="scroll-mt-6 outline-none"
                                 initial={{ opacity: 0, y: 12 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 12 }}
@@ -788,6 +822,10 @@ export default function Campanha() {
                         {campaignIsTerminal && showCves && (
                             <motion.div
                                 key="cves"
+                                ref={cvesSectionRef}
+                                tabIndex={-1}
+                                aria-live="polite"
+                                className="scroll-mt-6 outline-none"
                                 initial={{ opacity: 0, y: 12 }}
                                 animate={{ opacity: 1, y: 0 }}
                                 exit={{ opacity: 0, y: 12 }}
