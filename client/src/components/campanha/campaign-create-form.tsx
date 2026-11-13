@@ -141,7 +141,7 @@ export function CampaignCreateForm({
                   max={25}
                   inputMode="numeric"
                   placeholder="8 a 25"
-                  value={field.value ?? ""}
+                  value={field.value ?? "25"}
                   onChange={(event) =>
                     field.onChange(
                       event.target.value === ""
@@ -158,7 +158,7 @@ export function CampaignCreateForm({
               )}
             />
             <span className="text-[11px] text-muted-foreground/70">
-              Alvo de 3 a 25. A campanha é encerrada ao atingi-lo.
+              Alvo de 8 a 25. A campanha é encerrada ao atingi-lo.
             </span>
             {errors.moveLimit && (
               <span className="text-[11px] text-rose-300">
