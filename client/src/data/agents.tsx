@@ -1,11 +1,11 @@
+import type { Campaign, CampaignMove } from "@/components/campanha/types";
+import { CombIcon, type CombIconProps } from "@/components/comb-icon";
 import {
-  Crown,
   Radar,
   ScanSearch,
   ShieldHalf,
-  type LucideIcon,
+  type LucideIcon
 } from "lucide-react";
-import type { Campaign, CampaignMove } from "@/components/campanha/types";
 
 /**
  * Registro dos agentes especialistas.
@@ -23,7 +23,7 @@ export interface AgentDef {
   role: string;
   tacticId?: string;
   tacticName?: string;
-  icon: LucideIcon;
+  icon: LucideIcon | React.FC<CombIconProps>;
   accent: AgentAccent;
   description: string;
   /** Agente orquestrador (fica no centro da constelação). */
@@ -37,7 +37,7 @@ export const AGENTS: AgentDef[] = [
     id: "pent",
     name: "Pent",
     role: "Mestre · orquestra a partida",
-    icon: Crown,
+    icon: CombIcon,
     accent: "rose",
     master: true,
     description:
