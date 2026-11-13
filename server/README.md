@@ -32,6 +32,31 @@ pip install -r requirements.txt
 python -m pytest
 ```
 
+## Agentes por tatica (MITRE ATT&CK) + agente master (Pent)
+
+Cada agente de tatica (ex.: `app/agents/Recon/`) cobre UMA tatica do
+[MITRE ATT&CK](https://attack.mitre.org/) e usa o catalogo local em
+`app/attack_mitre/` para preencher `tactic_id`/`technique_id` com dados
+reais (nunca inventados pelo agente). O agente master (Pent, a ser
+implementado) consolida os `AgentResult` de cada agente em um
+`MasterVerdict` (ver `app/schemas/agents_contract.py`).
+
+Gerar/atualizar o catalogo local (uma vez; nao roda a cada campanha):
+
+```bash
+cd server
+.venv/bin/python -m app.attack_mitre.updater
+```
+
+Isso baixa o dataset STIX publico (`enterprise-attack.json`, ~55 MB) e grava
+um resumo pequeno em `app/attack_mitre/attack_cache.json` (nao versionado;
+cada maquina gera o seu). Os agentes consultam esse cache em memoria, sem
+rede, durante a campanha — ver `app.attack_mitre.get_catalog()`.
+
+Todo `Finding` de um agente de tatica deve preencher, alem da evidencia:
+- `exploitation_scenario`: como um atacante exploraria aquilo na pratica;
+- `recommendation`: como corrigir.
+
 ## API publica e seguranca
 
 Ver [docs/API.md](docs/API.md). O front so recebe `Public*` (`app/public_schemas.py`); segredos sao mascarados por `app/redact.py` antes de gravar e antes de sair.
