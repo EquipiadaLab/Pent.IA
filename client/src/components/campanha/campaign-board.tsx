@@ -1,33 +1,27 @@
 import {
+  Activity,
   ArrowRight,
   Bot,
   Check,
   ChevronRight,
   Circle,
   Copy,
-  Crown,
   ExternalLink,
   FileDown,
   FileSearch,
   FileText,
-  Globe,
   LoaderCircle,
   LockKeyhole,
   ScanSearch,
   ShieldAlert,
-  ShieldCheck,
   Square,
   Terminal,
   Wrench,
   X,
+  type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   MoveIcon,
   formatTime,
@@ -62,6 +56,61 @@ interface CampaignBoardProps {
   onOpenReport: () => void;
 }
 
+/* ------------------------------------------------------------------ shell */
+
+function Panel({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border border-border/60 bg-card/50 backdrop-blur-sm ${className}`}
+    >
+      {children}
+    </section>
+  );
+}
+
+function PanelHead({
+  icon: Icon,
+  title,
+  accent = "text-muted-foreground",
+  live = false,
+  right,
+}: {
+  icon: LucideIcon;
+  title: string;
+  accent?: string;
+  live?: boolean;
+  right?: ReactNode;
+}) {
+  return (
+    <header className="flex items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="relative flex size-4 items-center justify-center">
+          <Icon className={`size-4 ${accent}`} />
+          {live && (
+            <motion.span
+              className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-emerald-400"
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1.4, repeat: Infinity }}
+            />
+          )}
+        </span>
+        <h3 className="truncate text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
+          {title}
+        </h3>
+      </div>
+      {right && <div className="flex shrink-0 items-center gap-2">{right}</div>}
+    </header>
+  );
+}
+
+/* ------------------------------------------------------------------ board */
+
 export function CampaignBoard({
   campaign,
   latestMove,
@@ -79,145 +128,103 @@ export function CampaignBoard({
   canOpenReport,
   onOpenReport,
 }: CampaignBoardProps) {
-  const pendingMoves = campaign.moves.filter(
-    (move) => move.approval === "pending",
-  );
-
+  const pendingMoves = campaign.moves.filter((m) => m.approval === "pending");
   const [selectedMove, setSelectedMove] = useState<number | null>(null);
   const activeMove =
-    campaign.moves.find((move) => move.move === selectedMove) ?? latestMove;
+    campaign.moves.find((m) => m.move === selectedMove) ?? latestMove;
+  const findingsCount = campaign.moves.filter(
+    (m) => m.status && m.status !== "pass" && m.approval !== "denied",
+  ).length;
 
   return (
-    <div className="mt-4 grid gap-3 lg:h-[calc(100svh-15rem)] lg:min-h-0 lg:grid-cols-[76px_minmax(0,1.5fr)_minmax(0,1fr)]">
-      <AgentsRail />
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      <TimelineCard
+        campaign={campaign}
+        active={active}
+        error={campaignError}
+        stopError={stopError}
+        isStopping={isStopping}
+        onStop={onStop}
+        selectedMove={activeMove?.move ?? null}
+        onSelectMove={setSelectedMove}
+      />
 
-      <div className="flex min-h-0 min-w-0 flex-col gap-3">
-        <TimelineCard
-          campaign={campaign}
-          active={active}
-          error={campaignError}
-          selectedMove={activeMove?.move ?? null}
-          onSelectMove={setSelectedMove}
-          isStopping={isStopping}
-          stopError={stopError}
-          onStop={onStop}
-        />
-        <UrlBar origin={campaign.config.origin} />
-      </div>
+      <div className="flex min-w-0 flex-col gap-4">
+        <AnimatePresence initial={false}>
+          {pendingMoves.length > 0 && (
+            <motion.div
+              key="approvals"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+            >
+              <ApprovalsCard
+                pendingMoves={pendingMoves}
+                pendingAction={pendingAction}
+                actionError={actionError}
+                onDecide={onDecide}
+                onSelectMove={setSelectedMove}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      <div className="flex min-w-0 flex-col gap-3">
-        <ApprovalQueue
-          pendingMoves={pendingMoves}
-          pendingAction={pendingAction}
-          actionError={actionError}
-          onDecide={onDecide}
-          onSelectMove={setSelectedMove}
-        />
-        <ResultsPanel
+        <ResultCard
           move={activeMove}
-          findingsCount={
-            campaign.moves.filter(
-              (move) =>
-                move.status && move.status !== "pass" && move.approval !== "denied",
-            ).length
-          }
+          findingsCount={findingsCount}
+          canOpenReport={canOpenReport}
+          onOpenReport={onOpenReport}
           onDownloadReport={onDownloadReport}
           isDownloadingReport={isDownloadingReport}
           downloadError={downloadError}
-          canOpenReport={canOpenReport}
-          onOpenReport={onOpenReport}
         />
       </div>
     </div>
   );
 }
 
-/* ---------------------------------------------------------------- Agents rail */
-
-const PLACEHOLDER_AGENTS = [
-  "Reconhecimento",
-  "Exploração",
-  "Evidências",
-  "Relatório",
-  "Revisão",
-  "Escopo",
-];
-
-function AgentsRail() {
-  return (
-    <Card className="flex flex-row gap-3 border-white/10 bg-zinc-950/75 p-3 lg:flex-col lg:items-center lg:gap-2">
-      <button
-        type="button"
-        aria-current="true"
-        title="Agente Mestre Pent"
-        className="grid size-11 shrink-0 place-items-center rounded-full border-2 border-rose-500/60 bg-rose-500/15 text-rose-300 ring-2 ring-rose-500/20"
-      >
-        <Crown className="size-5" />
-      </button>
-      <span className="hidden text-center text-[9px] uppercase leading-tight tracking-wider text-zinc-500 lg:block">
-        Mestre Pent
-      </span>
-
-      <div className="mx-1 hidden h-px w-full bg-white/[0.07] lg:block" />
-
-      <div className="flex gap-2 lg:flex-col lg:items-center">
-        {PLACEHOLDER_AGENTS.map((label) => (
-          <button
-            key={label}
-            type="button"
-            disabled
-            title={`${label} · em breve`}
-            className="grid size-11 shrink-0 cursor-not-allowed place-items-center rounded-full border border-white/10 bg-white/[0.02] text-zinc-600"
-          >
-            <Bot className="size-5" />
-          </button>
-        ))}
-      </div>
-
-      <span className="mt-auto hidden text-center text-[9px] uppercase leading-tight tracking-wider text-zinc-600 lg:block">
-        Outros agentes · em breve
-      </span>
-    </Card>
-  );
-}
-
-/* ------------------------------------------------------------- Timeline (center) */
+/* --------------------------------------------------------------- timeline */
 
 function TimelineCard({
   campaign,
   active,
   error,
+  stopError,
+  isStopping,
+  onStop,
   selectedMove,
   onSelectMove,
-  isStopping,
-  stopError,
-  onStop,
 }: {
   campaign: Campaign;
   active: boolean;
   error: string;
+  stopError: string;
+  isStopping: boolean;
+  onStop: () => void;
   selectedMove: number | null;
   onSelectMove: (move: number) => void;
-  isStopping: boolean;
-  stopError: string;
-  onStop: () => void;
 }) {
-  const score = campaign.score;
-  const evalPercent = score
-    ? Math.min(100, Math.max(0, (score.eval_bar + 100) / 2))
-    : 50;
+  const href = safeHttpUrl(campaign.config.origin);
+  const host = (() => {
+    try {
+      return new URL(campaign.config.origin).host;
+    } catch {
+      return campaign.config.origin;
+    }
+  })();
+  const moves = [...campaign.moves].sort((a, b) => b.move - a.move);
 
   return (
-    <Card className="flex min-h-0 flex-1 flex-col border-white/10 bg-zinc-950/75">
-      <CardHeader className="gap-3 border-b border-white/[0.07] pb-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-zinc-300">
-            <span className="size-2 animate-pulse rounded-full bg-rose-500" />
-            Linha do tempo · ao vivo
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <span className="rounded-md border border-white/10 px-2 py-1 font-mono text-[10px] text-zinc-500">
-              {String(campaign.moves.length).padStart(2, "0")} lances
+    <Panel>
+      <PanelHead
+        icon={Activity}
+        title="Linha do tempo"
+        accent="text-primary"
+        live={active}
+        right={
+          <>
+            <span className="rounded-md border border-border/60 bg-muted/30 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+              {String(campaign.moves.length).padStart(2, "0")}
             </span>
             {active && (
               <Button
@@ -235,139 +242,121 @@ function TimelineCard({
                 Parar
               </Button>
             )}
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        <div>
-          <div className="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500">
-            <span>Avaliação da partida</span>
-            <span className="font-mono text-zinc-300">
-              {score ? `${score.accuracy.toFixed(1)} acc` : "—"} ·{" "}
-              {score
-                ? `${score.eval_bar > 0 ? "+" : ""}${score.eval_bar.toFixed(0)}`
-                : "—"}
-            </span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-rose-500 via-amber-300 to-emerald-400 transition-all duration-500"
-              style={{ width: `${evalPercent}%` }}
-            />
-          </div>
+      {host && (
+        <div className="flex items-center gap-2 border-b border-border/50 px-4 py-2">
+          <span className="size-1.5 rounded-full bg-emerald-400/70" />
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+            {host}
+          </span>
+          {href && (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Abrir <ExternalLink className="size-3" />
+            </a>
+          )}
         </div>
-      </CardHeader>
+      )}
 
-      <CardContent className="timeline-scrollbar min-h-0 flex-1 overflow-y-auto pt-2">
-        {stopError && (
-          <div className="mb-2">
-            <ApiErrorState compact message={stopError} />
+      <div className="timeline-scrollbar max-h-[30rem] min-h-0 overflow-y-auto p-2">
+        {(stopError || error) && (
+          <div className="mb-2 px-1">
+            <ApiErrorState compact message={stopError || error} />
           </div>
         )}
-        {error && <ApiErrorState compact message={error} />}
-        {campaign.moves.length ? (
-          <ol className="divide-y divide-white/[0.06]">
-            {[...campaign.moves]
-              .sort((a, b) => b.move - a.move)
-              .map((move) => {
-                const tag = statusTag(move);
-                const isSelected = move.move === selectedMove;
-                return (
-                  <li key={move.move} className="py-1">
-                    <button
-                      type="button"
-                      aria-pressed={isSelected}
-                      onClick={() => onSelectMove(move.move)}
-                      className={`w-full cursor-pointer rounded-xl border p-3 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 ${moveTone(
-                        move,
-                      )} ${isSelected ? "ring-1 ring-rose-400/60" : ""}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="relative mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-white/10 bg-zinc-950">
-                          <MoveIcon move={move} />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
-                              Lance {String(move.move).padStart(2, "0")} ·{" "}
-                              {formatTime(move.started_at)}
-                            </span>
-                            <span className="rounded bg-white/[0.05] px-1.5 py-0.5 font-mono text-[9px] text-zinc-500">
-                              {move.test_id}
-                            </span>
-                          </div>
-                          <h3 className="mt-1 text-sm font-medium text-zinc-200">
-                            {move.title}
-                          </h3>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-zinc-500">
-                            <span>{phaseLabel(move.phase)}</span>
-                            <span>·</span>
-                            <span>{gradeLabel(move.grade)}</span>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-2">
-                          <Badge
-                            variant="outline"
-                            className={`uppercase tracking-wider ${tag.className}`}
-                          >
-                            {tag.label}
-                          </Badge>
-                          <ChevronRight
-                            className={`size-4 transition-colors ${isSelected ? "text-rose-400" : "text-zinc-700"
-                              }`}
-                          />
-                        </div>
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-          </ol>
-        ) : (
-          <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-center">
+
+        {moves.length === 0 ? (
+          <div className="flex min-h-48 flex-col items-center justify-center gap-3 px-4 text-center">
             {active ? (
-              <LoaderCircle className="size-5 animate-spin text-rose-400" />
+              <LoaderCircle className="size-5 animate-spin text-primary" />
             ) : (
-              <Circle className="size-5 text-zinc-600" />
+              <Circle className="size-5 text-muted-foreground/50" />
             )}
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-muted-foreground">
               {campaign.state === "failed"
                 ? "Bloqueado: fora do escopo autorizado."
                 : "Aguardando o primeiro lance do agente..."}
             </p>
           </div>
+        ) : (
+          <ol className="flex flex-col gap-1.5">
+            {moves.map((move) => {
+              const tag = statusTag(move);
+              const isSelected = move.move === selectedMove;
+              return (
+                <motion.li
+                  key={move.move}
+                  layout
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.28 }}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => onSelectMove(move.move)}
+                    className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/40 ${moveTone(
+                      move,
+                    )} ${
+                      isSelected
+                        ? "ring-1 ring-primary/60"
+                        : "hover:border-foreground/20"
+                    }`}
+                  >
+                    <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border/60 bg-background">
+                      <MoveIcon move={move} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          #{String(move.move).padStart(2, "0")}
+                        </span>
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {move.title}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                        <span>{phaseLabel(move.phase)}</span>
+                        <span>·</span>
+                        <span>{gradeLabel(move.grade)}</span>
+                        <span>·</span>
+                        <span className="font-mono">
+                          {formatTime(move.started_at)}
+                        </span>
+                      </span>
+                    </span>
+                    <Badge
+                      variant="outline"
+                      className={`shrink-0 uppercase tracking-wider ${tag.className}`}
+                    >
+                      {tag.label}
+                    </Badge>
+                    <ChevronRight
+                      className={`size-4 shrink-0 transition-colors ${
+                        isSelected ? "text-primary" : "text-muted-foreground/40"
+                      }`}
+                    />
+                  </button>
+                </motion.li>
+              );
+            })}
+          </ol>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </Panel>
   );
 }
 
-function UrlBar({ origin }: { origin: string }) {
-  // §6.3: só vira href se for http(s) de verdade.
-  const href = safeHttpUrl(origin);
-  return (
-    <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-2">
-      <Globe className="size-4 shrink-0 text-zinc-500" />
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-300">
-        {origin || "Alvo definido pelo servidor"}
-      </span>
-      {href && (
-        <a
-          href={href}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
-        >
-          Abrir
-          <ExternalLink className="size-3" />
-        </a>
-      )}
-    </div>
-  );
-}
+/* -------------------------------------------------------------- approvals */
 
-/* ------------------------------------------------------- Approval queue (top-right) */
-
-function ApprovalQueue({
+function ApprovalsCard({
   pendingMoves,
   pendingAction,
   actionError,
@@ -380,132 +369,134 @@ function ApprovalQueue({
   onDecide: CampaignBoardProps["onDecide"];
   onSelectMove: (move: number) => void;
 }) {
-  const notifiedMove = useRef<number | null>(null);
+  const notified = useRef<number | null>(null);
   const head = pendingMoves[0] ?? null;
   const headNumber = head?.move ?? null;
+  const rest = pendingMoves.slice(1);
 
   useEffect(() => {
     if (headNumber === null) {
-      notifiedMove.current = null;
+      notified.current = null;
       return;
     }
-    if (notifiedMove.current === headNumber) return;
-    notifiedMove.current = headNumber;
+    if (notified.current === headNumber) return;
+    notified.current = headNumber;
     playApprovalNotification();
   }, [headNumber]);
 
+  if (!head) return null;
+
   return (
-    <Card className="border-amber-400/20 bg-gradient-to-b from-amber-950/10 to-zinc-950/80">
-      <CardHeader className="flex grid-cols-[1fr_auto] items-center border-b border-white/[0.07] pb-4">
-        <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-zinc-300">
-          <LockKeyhole className="size-4 text-amber-300" />
-          Ações do bot para aprovação
-        </CardTitle>
-        <Badge
-          variant="outline"
-          className="border-amber-400/30 bg-amber-400/10 uppercase tracking-wider text-amber-200"
+    <Panel className="border-amber-400/30 ring-1 ring-amber-400/10">
+      <PanelHead
+        icon={LockKeyhole}
+        title="Aguardando aprovação"
+        accent="text-amber-300"
+        right={
+          <Badge
+            variant="outline"
+            className="border-amber-400/30 bg-amber-400/10 uppercase tracking-wider text-amber-200"
+          >
+            {pendingMoves.length}
+          </Badge>
+        }
+      />
+
+      <div className="p-4">
+        <button
+          type="button"
+          onClick={() => onSelectMove(head.move)}
+          className="w-full rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-3 text-left transition-colors hover:border-amber-400/50"
         >
-          {pendingMoves.length} na fila
-        </Badge>
-      </CardHeader>
-      <CardContent className="pt-4">
-        {pendingMoves.length === 0 ? (
-          <div className="flex min-h-28 flex-col items-center justify-center gap-2 text-center">
-            <ShieldCheck className="size-6 text-zinc-600" />
-            <p className="text-sm text-zinc-400">
-              Nenhuma ação aguardando aprovação.
-            </p>
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-sm font-semibold text-foreground">
+              {head.title}
+            </span>
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              #{String(head.move).padStart(2, "0")} · {head.test_id}
+            </span>
           </div>
-        ) : (
-          <>
-            <ul className="space-y-2">
-              {pendingMoves.map((move, index) => (
+          {head.plan?.hypothesis && (
+            <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+              {head.plan.hypothesis}
+            </p>
+          )}
+        </button>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            disabled={Boolean(pendingAction)}
+            onClick={() => onDecide(head.move, "deny")}
+            className="border-border/60 bg-transparent text-foreground/80 hover:bg-foreground/5"
+          >
+            {pendingAction === `deny-${head.move}` ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <X />
+            )}
+            Negar
+          </Button>
+          <Button
+            disabled={Boolean(pendingAction)}
+            onClick={() => onDecide(head.move, "approve")}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            {pendingAction === `approve-${head.move}` ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <ArrowRight />
+            )}
+            Aprovar
+          </Button>
+        </div>
+
+        {actionError && (
+          <div className="mt-3">
+            <ApiErrorState compact message={actionError} />
+          </div>
+        )}
+
+        {rest.length > 0 && (
+          <div className="mt-3 border-t border-border/50 pt-3">
+            <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+              Na fila ({rest.length})
+            </p>
+            <ul className="flex flex-col gap-1.5">
+              {rest.map((move) => (
                 <li key={move.move}>
                   <button
                     type="button"
                     onClick={() => onSelectMove(move.move)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left transition-colors hover:border-white/20 ${index === 0
-                      ? "border-amber-400/40 bg-amber-400/5"
-                      : "border-white/10 bg-white/[0.02]"
-                      }`}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-border/60 bg-foreground/[0.02] px-3 py-1.5 text-left transition-colors hover:border-foreground/20"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-zinc-200">
-                        {move.title}
-                      </span>
-                      <span className="shrink-0 font-mono text-[10px] text-zinc-500">
-                        {move.test_id}
-                      </span>
-                    </div>
-                    {move.plan?.hypothesis && (
-                      <p className="mt-1 line-clamp-1 text-xs text-zinc-500">
-                        {move.plan.hypothesis}
-                      </p>
-                    )}
+                    <span className="truncate text-xs text-foreground/90">
+                      {move.title}
+                    </span>
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      #{String(move.move).padStart(2, "0")}
+                    </span>
                   </button>
                 </li>
               ))}
             </ul>
-
-            {actionError && (
-              <div className="mt-3">
-                <ApiErrorState compact message={actionError} />
-              </div>
-            )}
-
-            {head && (
-              <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/[0.07] pt-4">
-                <span className="truncate text-[11px] text-zinc-500">
-                  Decidindo lance {String(head.move).padStart(2, "0")}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={Boolean(pendingAction)}
-                    onClick={() => onDecide(head.move, "deny")}
-                    className="border-white/10 bg-transparent text-zinc-300 hover:bg-white/5"
-                  >
-                    {pendingAction === `deny-${head.move}` ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : (
-                      <X />
-                    )}
-                    Negar
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={Boolean(pendingAction)}
-                    onClick={() => onDecide(head.move, "approve")}
-                    className="bg-rose-600 text-white hover:bg-rose-500"
-                  >
-                    {pendingAction === `approve-${head.move}` ? (
-                      <LoaderCircle className="animate-spin" />
-                    ) : (
-                      <ArrowRight />
-                    )}
-                    Avançar
-                  </Button>
-                </div>
-              </div>
-            )}
-          </>
+          </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </Panel>
   );
 }
 
-/* ----------------------------------------------------- Results panel (bottom-right) */
+/* ----------------------------------------------------------------- result */
 
-const VERDICT_LABEL: Record<string, { label: string; className: string }> = {
+const VERDICT: Record<string, { label: string; className: string }> = {
   confirmed: {
-    label: "Confirmado (2 observações)",
+    label: "Confirmado",
     className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
   },
   discarded: {
-    label: "Descartado: não se reproduziu",
-    className: "border-white/15 bg-white/[0.04] text-zinc-400",
+    label: "Descartado",
+    className: "border-border/60 bg-muted/30 text-muted-foreground",
   },
   inconclusive: {
     label: "Não reconfirmado",
@@ -513,22 +504,22 @@ const VERDICT_LABEL: Record<string, { label: string; className: string }> = {
   },
 };
 
-function ResultsPanel({
+function ResultCard({
   move,
   findingsCount,
+  canOpenReport,
+  onOpenReport,
   onDownloadReport,
   isDownloadingReport,
   downloadError,
-  canOpenReport,
-  onOpenReport,
 }: {
   move: CampaignMove | null;
   findingsCount: number;
+  canOpenReport: boolean;
+  onOpenReport: () => void;
   onDownloadReport: () => void;
   isDownloadingReport: boolean;
   downloadError: string;
-  canOpenReport: boolean;
-  onOpenReport: () => void;
 }) {
   const [showEvidence, setShowEvidence] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -549,223 +540,275 @@ function ResultsPanel({
   };
 
   const attackHref = move ? safeHttpUrl(move.attack_url) : null;
-  const verdict = move?.verdict ? VERDICT_LABEL[move.verdict] : null;
+  const verdict = move?.verdict ? VERDICT[move.verdict] : null;
 
   return (
-    <Card className="flex flex-1 flex-col border-rose-500/20 bg-gradient-to-b from-rose-950/15 to-zinc-950/80">
-      <CardHeader className="flex grid-cols-[1fr_auto] items-center border-b border-white/[0.07] pb-4">
-        <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-zinc-300">
-          <ScanSearch className="size-4 text-rose-400" />
-          Resultados e sugestões
-        </CardTitle>
-        <span className="font-mono text-[10px] text-zinc-500">
-          {findingsCount} achado{findingsCount === 1 ? "" : "s"}
-        </span>
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col pt-4">
-        {move ? (
-          <>
-            <div className="flex items-center justify-between gap-3">
-              <Badge
-                variant="outline"
-                className={`uppercase tracking-wider ${gradeTone(move.grade)}`}
-              >
-                {gradeLabel(move.grade)}
-              </Badge>
-              <span className="font-mono text-[10px] text-zinc-500">
-                {move.test_id}
-              </span>
-            </div>
-            <h3 className="mt-2 text-base font-semibold tracking-tight text-zinc-100">
-              {move.title}
-            </h3>
+    <Panel>
+      <PanelHead
+        icon={ScanSearch}
+        title="Resultado do lance"
+        accent="text-primary"
+        right={
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {findingsCount} achado{findingsCount === 1 ? "" : "s"}
+          </span>
+        }
+      />
 
-            {(verdict || move.recommended_by || move.attack_technique_id) && (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {verdict && (
+      <div className="timeline-scrollbar max-h-[32rem] min-h-0 overflow-y-auto">
+        {move ? (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={move.move}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22 }}
+              className="space-y-4 p-4"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2">
                   <Badge
                     variant="outline"
-                    className={`uppercase tracking-wider ${verdict.className}`}
+                    className={`uppercase tracking-wider ${gradeTone(move.grade)}`}
                   >
-                    {verdict.label}
+                    {gradeLabel(move.grade)}
                   </Badge>
-                )}
-                {move.recommended_by && (
-                  <Badge
-                    variant="outline"
-                    className="border-sky-400/30 bg-sky-400/10 text-sky-300"
-                  >
-                    Recomendado por: {move.recommended_by}
-                  </Badge>
-                )}
-                {move.attack_technique_id &&
-                  (attackHref ? (
-                    <a
-                      href={attackHref}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="inline-flex"
-                    >
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    #{String(move.move).padStart(2, "0")} · {move.test_id}
+                  </span>
+                </div>
+                <h3 className="mt-2 text-base font-semibold tracking-tight text-foreground">
+                  {move.title}
+                </h3>
+                {(verdict || move.recommended_by || move.attack_technique_id) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {verdict && (
                       <Badge
                         variant="outline"
-                        className="border-violet-400/30 bg-violet-400/10 text-violet-300 hover:bg-violet-400/20"
+                        className={`uppercase tracking-wider ${verdict.className}`}
                       >
-                        ATT&CK {move.attack_technique_id}
-                        {move.attack_technique_name
-                          ? ` · ${move.attack_technique_name}`
-                          : ""}
+                        {verdict.label}
                       </Badge>
-                    </a>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="border-violet-400/30 bg-violet-400/10 text-violet-300"
-                    >
-                      ATT&CK {move.attack_technique_id}
-                    </Badge>
-                  ))}
-              </div>
-            )}
-
-            <div className="mt-3 space-y-3">
-              <div>
-                <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
-                  <ShieldAlert className="size-3.5 text-amber-300" />
-                  Risco observado
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-300">
-                  {move.impact ||
-                    move.explanation ||
-                    "Sem risco relevante registrado para este lance."}
-                </p>
-              </div>
-              <div>
-                <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
-                  <Wrench className="size-3.5 text-rose-300" />
-                  Solução sugerida
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-rose-200/90">
-                  {move.recommendation || "Nenhuma ação necessária até aqui."}
-                </p>
-              </div>
-              {move.ai_explanation && (
-                <div>
-                  <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
-                    <Bot className="size-3.5 text-sky-300" />
-                    Comentário do treinador (IA)
-                    {move.ai_review?.verdict === "approved" && (
-                      <span className="rounded bg-emerald-400/10 px-1 text-[9px] text-emerald-300">
-                        revisado pelo juiz
-                      </span>
                     )}
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-zinc-300">
-                    {move.ai_explanation}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {move.reproduce.length > 0 && (
-              <div className="mt-3">
-                <div className="flex items-center justify-between">
-                  <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
-                    <Terminal className="size-3.5 text-zinc-400" />
-                    Como reproduzir
-                  </p>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label="Copiar comandos de reprodução"
-                    className="text-zinc-400 hover:bg-white/10 hover:text-white"
-                    onClick={() => copyReproduce(move.reproduce.join("\n"))}
-                  >
-                    {copied ? (
-                      <Check className="size-3.5" />
-                    ) : (
-                      <Copy className="size-3.5" />
-                    )}
-                  </Button>
-                </div>
-                <pre className="mt-1 overflow-x-auto rounded-lg border border-white/[0.07] bg-black/40 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-300">
-                  {move.reproduce.join("\n")}
-                </pre>
-              </div>
-            )}
-
-            {move.evidence.length > 0 && (
-              <div className="mt-3">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/10"
-                  onClick={() => setShowEvidence((value) => !value)}
-                >
-                  <FileSearch />
-                  {showEvidence ? "Ocultar evidência" : "Abrir evidência bruta"}
-                </Button>
-                {showEvidence && (
-                  <ul className="mt-2 space-y-2">
-                    {move.evidence.map((item) => (
-                      <li
-                        key={item.id}
-                        className="rounded-lg border border-white/[0.07] bg-black/30 p-2.5 text-xs"
+                    {move.recommended_by && (
+                      <Badge
+                        variant="outline"
+                        className="border-sky-400/30 bg-sky-400/10 text-sky-300"
                       >
-                        <p className="break-all font-mono text-zinc-300">
-                          {item.request}
-                        </p>
-                        {item.response_status !== null && (
-                          <span className="mt-1 inline-block rounded bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
-                            HTTP {item.response_status}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+                        {move.recommended_by}
+                      </Badge>
+                    )}
+                    {move.attack_technique_id &&
+                      (attackHref ? (
+                        <a
+                          href={attackHref}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="inline-flex"
+                        >
+                          <Badge
+                            variant="outline"
+                            className="border-violet-400/30 bg-violet-400/10 text-violet-300 hover:bg-violet-400/20"
+                          >
+                            ATT&CK {move.attack_technique_id}
+                          </Badge>
+                        </a>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="border-violet-400/30 bg-violet-400/10 text-violet-300"
+                        >
+                          ATT&CK {move.attack_technique_id}
+                        </Badge>
+                      ))}
+                  </div>
                 )}
               </div>
-            )}
-          </>
+
+              <Section icon={ShieldAlert} iconClass="text-amber-300" label="Risco observado">
+                {move.impact ||
+                  move.explanation ||
+                  "Sem risco relevante registrado para este lance."}
+              </Section>
+
+              <Section icon={Wrench} iconClass="text-primary" label="Solução sugerida" tone="primary">
+                {move.recommendation || "Nenhuma ação necessária até aqui."}
+              </Section>
+
+              {move.ai_explanation && (
+                <Section
+                  icon={Bot}
+                  iconClass="text-sky-300"
+                  label="Comentário do treinador (IA)"
+                  badge={
+                    move.ai_review?.verdict === "approved"
+                      ? "revisado pelo juiz"
+                      : undefined
+                  }
+                >
+                  {move.ai_explanation}
+                </Section>
+              )}
+
+              {move.reproduce.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <SectionLabel icon={Terminal} iconClass="text-muted-foreground">
+                      Como reproduzir
+                    </SectionLabel>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label="Copiar comandos"
+                      className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                      onClick={() => copyReproduce(move.reproduce.join("\n"))}
+                    >
+                      {copied ? (
+                        <Check className="size-3.5" />
+                      ) : (
+                        <Copy className="size-3.5" />
+                      )}
+                    </Button>
+                  </div>
+                  <pre className="mt-1.5 overflow-x-auto rounded-lg border border-border/60 bg-background/60 p-2.5 font-mono text-[11px] leading-relaxed text-foreground/90">
+                    {move.reproduce.join("\n")}
+                  </pre>
+                </div>
+              )}
+
+              {move.evidence.length > 0 && (
+                <div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full border-border/60 bg-card/50 text-foreground/90 hover:bg-foreground/5"
+                    onClick={() => setShowEvidence((v) => !v)}
+                  >
+                    <FileSearch />
+                    {showEvidence
+                      ? "Ocultar evidência"
+                      : `Ver ${move.evidence.length} evidência${move.evidence.length === 1 ? "" : "s"}`}
+                  </Button>
+                  {showEvidence && (
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {move.evidence.map((item) => (
+                        <li
+                          key={item.id}
+                          className="rounded-lg border border-border/60 bg-background/50 p-2.5 text-xs"
+                        >
+                          <p className="break-all font-mono text-foreground/90">
+                            {item.request}
+                          </p>
+                          {item.response_status !== null && (
+                            <span className="mt-1 inline-block rounded bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                              HTTP {item.response_status}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          </AnimatePresence>
         ) : (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-            <ScanSearch className="size-6 text-zinc-600" />
-            <p className="text-sm text-zinc-400">
-              Selecione um lance para ver o resultado.
+          <div className="flex min-h-48 flex-col items-center justify-center gap-2 p-6 text-center">
+            <ScanSearch className="size-6 text-muted-foreground/50" />
+            <p className="text-sm text-muted-foreground">
+              Selecione um lance na linha do tempo para ver o resultado.
             </p>
           </div>
         )}
+      </div>
 
-        <div className="mt-4 space-y-2 border-t border-white/[0.07] pt-3">
-          {downloadError && (
-            <ApiErrorState compact message={downloadError} />
-          )}
-          {canOpenReport && (
-            <Button
-              onClick={onOpenReport}
-              className="w-full bg-rose-600 text-white hover:bg-rose-500"
-            >
-              <FileText />
-              Ver Game Review
-            </Button>
-          )}
+      <div className="space-y-2 border-t border-border/50 p-4">
+        {downloadError && <ApiErrorState compact message={downloadError} />}
+        {canOpenReport && (
           <Button
-            variant="outline"
-            disabled={isDownloadingReport}
-            onClick={onDownloadReport}
-            className="w-full border-white/10 bg-white/[0.03] text-zinc-100 hover:bg-white/10"
+            onClick={onOpenReport}
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            {isDownloadingReport ? (
-              <LoaderCircle className="animate-spin" />
-            ) : (
-              <FileDown />
-            )}
-            Baixar relatório detalhado
+            <FileText />
+            Ver Game Review
           </Button>
-        </div>
-      </CardContent>
-    </Card>
+        )}
+        <Button
+          variant="outline"
+          disabled={isDownloadingReport}
+          onClick={onDownloadReport}
+          className="w-full border-border/60 bg-card/50 text-foreground hover:bg-foreground/5"
+        >
+          {isDownloadingReport ? (
+            <LoaderCircle className="animate-spin" />
+          ) : (
+            <FileDown />
+          )}
+          Baixar relatório
+        </Button>
+      </div>
+    </Panel>
   );
 }
+
+/* ---------------------------------------------------------------- bits */
+
+function SectionLabel({
+  icon: Icon,
+  iconClass = "",
+  children,
+}: {
+  icon: LucideIcon;
+  iconClass?: string;
+  children: ReactNode;
+}) {
+  return (
+    <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+      <Icon className={`size-3.5 ${iconClass}`} />
+      {children}
+    </p>
+  );
+}
+
+function Section({
+  icon,
+  iconClass,
+  label,
+  badge,
+  tone = "default",
+  children,
+}: {
+  icon: LucideIcon;
+  iconClass?: string;
+  label: string;
+  badge?: string;
+  tone?: "default" | "primary";
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <SectionLabel icon={icon} iconClass={iconClass}>
+          {label}
+        </SectionLabel>
+        {badge && (
+          <span className="rounded bg-emerald-400/10 px-1 text-[9px] text-emerald-300">
+            {badge}
+          </span>
+        )}
+      </div>
+      <p
+        className={`mt-1 text-xs leading-relaxed ${
+          tone === "primary" ? "text-primary/90" : "text-foreground/90"
+        }`}
+      >
+        {children}
+      </p>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------- audio */
 
 function playApprovalNotification() {
   if (typeof window.AudioContext === "undefined") return;
@@ -791,8 +834,5 @@ function playApprovalNotification() {
       oscillator.start(context.currentTime);
       oscillator.stop(context.currentTime + 0.4);
     })
-    .catch((error: unknown) => {
-      console.warn("Não foi possível reproduzir o som de aprovação.", error);
-      void context.close();
-    });
+    .catch(() => void context.close());
 }

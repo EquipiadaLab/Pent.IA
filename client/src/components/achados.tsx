@@ -1,19 +1,25 @@
-import { useQuery } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "motion/react";
 import {
     Check,
     ChevronRight,
     Copy,
     Crosshair,
-    FileSearch,
     FileText,
     LoaderCircle,
     ScrollText,
     TriangleAlert,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { api, getApiErrorMessage } from "@/lib/api";
-import { ACTIVE_STATES } from "./campanha/helpers";
-import type { Campaign, CampaignMove } from "./campanha/types";
+import { getApiErrorMessage } from "@/lib/api";
+import {
+    primaryCampaignId,
+    useCampaign,
+    useCampaignsList,
+} from "@/hooks/use-campaigns";
+import { ACCENT, agentForMove } from "@/data/agents";
+import { fadeUp, staggerContainer } from "@/lib/motion";
+import type { CampaignMove } from "./campanha/types";
+import { PageHeader } from "./layout/page-header";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
@@ -40,7 +46,7 @@ function severityBadge(move: CampaignMove): { label: string; className: string }
     if (move.status === "inconclusive")
         return {
             label: "Inconclusivo",
-            className: "border-white/15 bg-white/[0.04] text-zinc-300",
+            className: "border-border/60 bg-muted/30 text-muted-foreground",
         };
     return {
         low: {
@@ -68,18 +74,12 @@ function rawResponse(move: CampaignMove) {
     const evidence = move.evidence[0];
     if (!evidence) return "Sem evidência bruta registrada para este achado.";
     const lines = [evidence.request];
-    if (evidence.response_status !== null) {
+    if (evidence.response_status !== null)
         lines.push(`HTTP/1.1 ${evidence.response_status}`);
-    }
-    for (const [key, value] of Object.entries(evidence.response_headers)) {
+    for (const [key, value] of Object.entries(evidence.response_headers))
         lines.push(`${key}: ${value}`);
-    }
-    if (evidence.response_sha256) {
-        lines.push(`# sha256: ${evidence.response_sha256}`);
-    }
-    if (evidence.note) {
-        lines.push(`# nota: ${evidence.note}`);
-    }
+    if (evidence.response_sha256) lines.push(`# sha256: ${evidence.response_sha256}`);
+    if (evidence.note) lines.push(`# nota: ${evidence.note}`);
     return lines.join("\n");
 }
 
@@ -100,44 +100,15 @@ function useCopy() {
 }
 
 export default function Achados() {
-    const campaignsQuery = useQuery({
-        queryKey: ["campaigns"],
-        queryFn: async () => {
-            const { data } = await api.get<Campaign[]>("/campaigns");
-            return [...data].sort(
-                (a, b) =>
-                    new Date(b.created_at).getTime() -
-                    new Date(a.created_at).getTime(),
-            );
-        },
-        refetchInterval: 5000,
-    });
-
+    const campaignsQuery = useCampaignsList();
     const campaigns = useMemo(
         () => campaignsQuery.data || [],
         [campaignsQuery.data],
     );
-    const campaignId =
-        campaigns.find((item) => ACTIVE_STATES.includes(item.state))?.id ||
-        campaigns[0]?.id ||
-        "";
-
-    const campaignQuery = useQuery({
-        queryKey: ["campaign", campaignId],
-        queryFn: async () =>
-            (
-                await api.get<Campaign>(
-                    `/campaigns/${encodeURIComponent(campaignId)}`,
-                )
-            ).data,
-        enabled: Boolean(campaignId),
-        refetchInterval: (query) =>
-            query.state.data && ACTIVE_STATES.includes(query.state.data.state)
-                ? 2500
-                : false,
-    });
-
+    const campaignId = primaryCampaignId(campaigns);
+    const campaignQuery = useCampaign(campaignId);
     const campaign = campaignQuery.data || null;
+
     const findings = useMemo(() => {
         if (!campaign) return [];
         return campaign.moves
@@ -173,40 +144,27 @@ export default function Achados() {
             : "";
 
     return (
-        <main className="mx-auto w-full max-w-[1500px] pb-12">
-            <header className="flex flex-wrap items-end justify-between gap-4 pt-8">
-                <div>
-                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-500">
-                        <span className="h-px w-6 bg-rose-500" />
-                        Registro de evidências
-                    </p>
-                    <h1 className="mt-2 text-4xl font-semibold tracking-tight">
-                        Achados validados
-                    </h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        Cada risco tem uma evidência, uma confiança e um próximo
-                        movimento.
-                    </p>
-                </div>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={!selected}
-                    className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/10"
-                    onClick={() =>
-                        selected && copy(rawResponse(selected), "header")
-                    }
-                >
-                    {copiedKey === "header" ? <Check /> : <Copy />}
-                    {copiedKey === "header"
-                        ? "Evidência copiada"
-                        : "Copiar evidência selecionada"}
-                </Button>
-            </header>
+        <div className="space-y-5">
+            <PageHeader
+                eyebrow="Registro de evidências"
+                title="Achados validados"
+                description="Cada risco tem uma evidência, uma confiança e um próximo movimento."
+                actions={
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!selected}
+                        className="rounded-xl border-border/60 bg-card/50"
+                        onClick={() => selected && copy(rawResponse(selected), "header")}
+                    >
+                        {copiedKey === "header" ? <Check /> : <Copy />}
+                        {copiedKey === "header" ? "Copiado" : "Copiar evidência"}
+                    </Button>
+                }
+            />
 
-            <div className="mt-6 flex items-center justify-between gap-3">
-                <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500">
-                    <FileSearch className="size-4" />
+            <div className="flex items-center justify-between gap-3 text-xs">
+                <p className="flex items-center gap-2 font-mono uppercase tracking-wider text-muted-foreground">
                     {String(findings.length).padStart(2, "0")} achados nesta campanha
                 </p>
                 {findings.length > 0 && (
@@ -220,7 +178,7 @@ export default function Achados() {
             </div>
 
             {error && (
-                <Card className="mt-4 border-rose-500/30 bg-rose-500/[0.06]">
+                <Card className="border-rose-500/30 bg-rose-500/[0.06]">
                     <CardContent className="flex items-center gap-3 py-4 text-sm text-rose-200">
                         <TriangleAlert className="size-4 shrink-0" />
                         {error}
@@ -229,49 +187,55 @@ export default function Achados() {
             )}
 
             {isLoading ? (
-                <Card className="mt-4 border-white/10 bg-zinc-950/80">
-                    <CardContent className="flex min-h-56 items-center justify-center text-zinc-500">
+                <Card className="border-border/60 bg-card/40">
+                    <CardContent className="flex min-h-56 items-center justify-center text-muted-foreground">
                         <LoaderCircle className="size-5 animate-spin" />
                     </CardContent>
                 </Card>
             ) : findings.length === 0 ? (
-                <Card className="mt-4 border-white/10 bg-zinc-950/80">
+                <Card className="border-border/60 bg-card/40">
                     <CardContent className="flex min-h-56 flex-col items-center justify-center gap-3 text-center">
-                        <ScrollText className="size-7 text-zinc-600" />
+                        <ScrollText className="size-7 text-muted-foreground" />
                         <div>
-                            <p className="text-sm font-medium text-zinc-200">
+                            <p className="text-sm font-medium text-foreground">
                                 Nenhum achado validado ainda
                             </p>
-                            <p className="mt-1 text-xs text-zinc-500">
-                                Os achados aparecem aqui conforme o agente valida os
-                                lances da campanha.
+                            <p className="mt-1 text-xs text-muted-foreground">
+                                Os achados aparecem aqui conforme o agente valida os lances.
                             </p>
                         </div>
                     </CardContent>
                 </Card>
             ) : (
-                <>
-                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <motion.div
+                        variants={staggerContainer(0.05)}
+                        initial="hidden"
+                        animate="show"
+                        className="grid content-start gap-3"
+                    >
                         {findings.map((move) => {
                             const badge = severityBadge(move);
                             const id = findingId(move);
-                            const isActive = selected
-                                ? findingId(selected) === id
-                                : false;
+                            const isActive = selected ? findingId(selected) === id : false;
+                            const agent = agentForMove(move);
+                            const accent = ACCENT[agent.accent];
                             return (
-                                <button
+                                <motion.button
                                     key={id}
+                                    variants={fadeUp}
                                     type="button"
                                     aria-pressed={isActive}
                                     onClick={() => setSelectedId(id)}
-                                    className={`group rounded-2xl border bg-zinc-950/70 p-5 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 ${
+                                    whileHover={{ y: -2 }}
+                                    className={`group rounded-2xl border p-5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/40 ${
                                         isActive
-                                            ? "border-rose-500/50 bg-rose-950/10 ring-1 ring-rose-500/30"
-                                            : "border-white/10"
+                                            ? "border-primary/50 bg-primary/[0.06] ring-1 ring-primary/30"
+                                            : "border-border/60 bg-card/50 hover:border-border"
                                     }`}
                                 >
                                     <div className="flex items-start justify-between gap-3">
-                                        <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+                                        <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                                             {id} · {findingPath(move)}
                                         </span>
                                         <Badge
@@ -281,46 +245,60 @@ export default function Achados() {
                                             {badge.label}
                                         </Badge>
                                     </div>
-                                    <h2 className="mt-3 text-lg font-semibold tracking-tight text-zinc-100">
+                                    <h2 className="mt-3 text-lg font-semibold tracking-tight text-foreground">
                                         {move.title}
                                     </h2>
-                                    <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-zinc-400">
+                                    <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
                                         {move.explanation ||
                                             move.ai_explanation ||
                                             move.plan?.hypothesis ||
                                             "Sem descrição registrada para este achado."}
                                     </p>
-                                    <div className="mt-5 flex items-center justify-between border-t border-white/[0.06] pt-3 text-[11px] text-zinc-500">
-                                        <span>
-                                            Confiança {confidenceLabel(move.confidence)}{" "}
-                                            · {move.evidence.length} evidência
-                                            {move.evidence.length === 1 ? "" : "s"}
+                                    <div className="mt-4 flex items-center justify-between border-t border-border/50 pt-3 text-[11px] text-muted-foreground">
+                                        <span className="flex items-center gap-2">
+                                            <span
+                                                className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 ${accent.border} ${accent.text}`}
+                                            >
+                                                <agent.icon className="size-3" />
+                                                {agent.name}
+                                            </span>
+                                            Confiança {confidenceLabel(move.confidence)}
                                         </span>
                                         <ChevronRight
                                             className={`size-4 transition-colors ${
                                                 isActive
-                                                    ? "text-rose-400"
-                                                    : "text-zinc-700 group-hover:text-zinc-500"
+                                                    ? "text-primary"
+                                                    : "text-muted-foreground/40 group-hover:text-muted-foreground"
                                             }`}
                                         />
                                     </div>
-                                </button>
+                                </motion.button>
                             );
                         })}
-                    </div>
+                    </motion.div>
 
-                    {selected && (
-                        <NarrativePanel
-                            move={selected}
-                            copiedKey={copiedKey}
-                            onCopyRaw={() =>
-                                copy(rawResponse(selected), "raw")
-                            }
-                        />
-                    )}
-                </>
+                    <div className="lg:sticky lg:top-6 lg:self-start">
+                        <AnimatePresence mode="wait">
+                            {selected && (
+                                <motion.div
+                                    key={findingId(selected)}
+                                    initial={{ opacity: 0, y: 12 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -8 }}
+                                    transition={{ duration: 0.25 }}
+                                >
+                                    <NarrativePanel
+                                        move={selected}
+                                        copiedKey={copiedKey}
+                                        onCopyRaw={() => copy(rawResponse(selected), "raw")}
+                                    />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                </div>
             )}
-        </main>
+        </div>
     );
 }
 
@@ -335,82 +313,71 @@ function NarrativePanel({
 }) {
     const path = findingPath(move);
     return (
-        <Card className="mt-3 border-rose-500/20 bg-gradient-to-b from-rose-950/10 to-zinc-950/80">
+        <Card className="border-primary/20 bg-gradient-to-b from-primary/[0.06] to-card/60">
             <CardContent className="p-5">
                 <div className="flex items-center justify-between gap-3">
-                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-rose-400">
-                        <span className="size-1.5 rounded-full bg-rose-400" />
+                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                        <span className="size-1.5 rounded-full bg-primary" />
                         Narrativa selecionada
                     </p>
                     <Badge
                         variant="outline"
-                        className="border-rose-500/30 bg-rose-500/10 font-mono uppercase tracking-wider text-rose-300"
+                        className="border-primary/30 bg-primary/10 font-mono uppercase tracking-wider text-primary"
                     >
                         {findingId(move)}
                     </Badge>
                 </div>
-                <h2 className="mt-2 text-lg font-semibold tracking-tight text-zinc-100">
+                <h2 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
                     {move.title}
                 </h2>
 
-                <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                    <div className="space-y-3">
-                        <NarrativeRow
-                            icon={<Crosshair className="size-4 text-rose-300" />}
-                            label="Ação"
-                            tag="Observado"
-                            text={
-                                move.plan?.action ||
-                                `Verificação controlada em ${path}.`
-                            }
-                        />
-                        <NarrativeRow
-                            icon={<FileText className="size-4 text-sky-300" />}
-                            label="Evidência"
-                            tag="Bruto"
-                            text={`${move.evidence.length} evidência${
-                                move.evidence.length === 1 ? "" : "s"
-                            } · confiança ${confidenceLabel(move.confidence)}.`}
-                        />
-                        <NarrativeRow
-                            icon={
-                                <TriangleAlert className="size-4 text-amber-300" />
-                            }
-                            label="Impacto"
-                            tag="Priorizar"
-                            text={
-                                [
-                                    move.impact,
-                                    move.recommendation
-                                        ? `Correção: ${move.recommendation}`
-                                        : "",
-                                ]
-                                    .filter(Boolean)
-                                    .join(" ") ||
-                                "Sem impacto priorizado para este achado."
-                            }
-                        />
-                    </div>
+                <div className="mt-4 space-y-3">
+                    <NarrativeRow
+                        icon={<Crosshair className="size-4 text-rose-300" />}
+                        label="Ação"
+                        text={move.plan?.action || `Verificação controlada em ${path}.`}
+                    />
+                    <NarrativeRow
+                        icon={<FileText className="size-4 text-sky-300" />}
+                        label="Evidência"
+                        text={`${move.evidence.length} evidência${
+                            move.evidence.length === 1 ? "" : "s"
+                        } · confiança ${confidenceLabel(move.confidence)}.`}
+                    />
+                    <NarrativeRow
+                        icon={<TriangleAlert className="size-4 text-amber-300" />}
+                        label="Impacto"
+                        text={
+                            [
+                                move.impact,
+                                move.recommendation
+                                    ? `Correção: ${move.recommendation}`
+                                    : "",
+                            ]
+                                .filter(Boolean)
+                                .join(" ") || "Sem impacto priorizado para este achado."
+                        }
+                    />
+                </div>
 
-                    <div className="flex flex-col rounded-xl border border-white/[0.07] bg-black/40">
-                        <div className="flex items-center justify-between border-b border-white/[0.07] px-3 py-2">
-                            <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
-                                Raw response · selecionada
-                            </span>
-                            <Button
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label="Copiar resposta bruta"
-                                className="text-zinc-400 hover:bg-white/10 hover:text-white"
-                                onClick={onCopyRaw}
-                            >
-                                {copiedKey === "raw" ? <Check /> : <Copy />}
-                            </Button>
-                        </div>
-                        <pre className="overflow-x-auto px-3 py-3 font-mono text-[11px] leading-relaxed text-zinc-300">
-                            {rawResponse(move)}
-                        </pre>
+                <div className="mt-4 rounded-xl border border-border/60 bg-background/50">
+                    <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                            Resposta bruta
+                        </span>
+                        <Button
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label="Copiar resposta bruta"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={onCopyRaw}
+                        >
+                            {copiedKey === "raw" ? <Check /> : <Copy />}
+                        </Button>
                     </div>
+                    <pre className="max-h-64 overflow-auto px-3 py-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                        {rawResponse(move)}
+                    </pre>
                 </div>
             </CardContent>
         </Card>
@@ -420,27 +387,22 @@ function NarrativePanel({
 function NarrativeRow({
     icon,
     label,
-    tag,
     text,
 }: {
     icon: React.ReactNode;
     label: string;
-    tag: string;
     text: string;
 }) {
     return (
-        <div className="flex gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
-            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border border-white/10 bg-zinc-950">
+        <div className="flex gap-3 rounded-xl border border-border/50 bg-background/30 p-3">
+            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg border border-border/60 bg-card">
                 {icon}
             </span>
             <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-wider text-zinc-500">
-                    {label} ·{" "}
-                    <span className="text-emerald-400">{tag}</span>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {label}
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-300">
-                    {text}
-                </p>
+                <p className="mt-1 text-xs leading-relaxed text-foreground/90">{text}</p>
             </div>
         </div>
     );

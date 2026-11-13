@@ -1,50 +1,45 @@
-import { api, getApiErrorMessage } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "motion/react";
 import {
     AlertTriangle,
-    CircleCheck,
     LoaderCircle,
-    LockKeyhole,
+    Lock,
     RefreshCw,
+    ShieldBan,
+    Target,
 } from "lucide-react";
-import { useEffect } from "react";
+import { api, getApiErrorMessage } from "@/lib/api";
+import { fadeUp, staggerContainer } from "@/lib/motion";
 import type { Scope } from "./campanha/types";
-import { DashboardHeader } from "./dashboard.header";
+import { PageHeader } from "./layout/page-header";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import { Card, CardContent } from "./ui/card";
 
 export default function Allowlist() {
     const scopeQuery = useQuery({
         queryKey: ["scope"],
         queryFn: async () => (await api.get<Scope>("/scope")).data,
     });
-
-    const refetchScope = scopeQuery.refetch;
-    useEffect(() => {
-        const handleRefresh = () => void refetchScope();
-        window.addEventListener("scope:refresh", handleRefresh);
-        return () => window.removeEventListener("scope:refresh", handleRefresh);
-    }, [refetchScope]);
-
     const scope = scopeQuery.data;
-    const isLoading = scopeQuery.isPending;
-    const isRefreshing = scopeQuery.isFetching;
+    const lockedTarget = scope?.locked_target ?? null;
+    const targets = scope?.authorized_targets ?? [];
 
     return (
-        <main className="mx-auto w-full max-w-[1500px] pb-10">
-            <DashboardHeader
+        <div className="space-y-5">
+            <PageHeader
+                eyebrow="Superfície autorizada"
                 title="Escopo e allowlist"
-                description="O agente só enxerga as origens autorizadas pela configuração do servidor."
+                description="O agente só enxerga o alvo autorizado pela configuração do servidor."
                 actions={
                     <Button
-                        aria-label="Atualizar allowlist"
+                        aria-label="Atualizar escopo"
                         variant="outline"
                         size="icon-sm"
-                        className="border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/10 hover:text-white"
-                        disabled={isRefreshing}
+                        className="rounded-xl border-border/60 bg-card/50"
+                        disabled={scopeQuery.isFetching}
                         onClick={() => void scopeQuery.refetch()}
                     >
-                        <RefreshCw className={isRefreshing ? "animate-spin" : ""} />
+                        <RefreshCw className={scopeQuery.isFetching ? "animate-spin" : ""} />
                     </Button>
                 }
             />
@@ -52,13 +47,13 @@ export default function Allowlist() {
             {scopeQuery.isError && (
                 <div
                     role="alert"
-                    className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200"
                 >
                     <span>{getApiErrorMessage(scopeQuery.error)}</span>
                     <Button
                         variant="outline"
                         size="sm"
-                        className="border-rose-500/30 text-rose-200 hover:bg-rose-500/10"
+                        className="rounded-xl border-rose-500/30 text-rose-200 hover:bg-rose-500/10"
                         onClick={() => void scopeQuery.refetch()}
                     >
                         Tentar novamente
@@ -66,103 +61,133 @@ export default function Allowlist() {
                 </div>
             )}
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-                <Card className="border-white/10 bg-zinc-950/80">
-                    <CardHeader className="border-b border-white/[0.07]">
-                        <div className="flex items-start justify-between gap-4">
-                            <div>
-                                <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-rose-500">
-                                    <span className="size-1.5 rounded-full bg-rose-500" />
-                                    Origens permitidas
-                                </p>
-                                <CardTitle className="mt-2 text-sm text-zinc-100">
-                                    {scope?.locked_target
-                                        ? "Alvo travado no servidor"
-                                        : `${scope?.authorized_targets.length ?? 0} origem(ns) autorizada(s)`}
-                                </CardTitle>
-                            </div>
-                            <span className="rounded border border-emerald-500/20 bg-emerald-500/[0.08] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
-                                Escopo ativo
-                            </span>
-                        </div>
-                    </CardHeader>
-                    <CardContent className="pt-2">
-                        {isLoading ? (
-                            <div className="flex min-h-28 items-center justify-center text-zinc-500">
-                                <LoaderCircle className="size-5 animate-spin" />
-                            </div>
-                        ) : scope?.authorized_targets.length ? (
-                            <ul className="divide-y divide-white/[0.07]">
-                                {scope.authorized_targets.map((origin) => (
-                                    <li
-                                        key={origin}
-                                        className="flex items-center gap-3 py-3"
-                                    >
-                                        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
-                                            <CircleCheck className="size-4" />
-                                        </span>
-                                        <div className="min-w-0 flex-1">
-                                            <p className="break-all text-sm text-zinc-200">
-                                                {origin}
-                                            </p>
-                                            <p className="mt-1 text-[10px] uppercase tracking-wider text-zinc-500">
-                                                Origem autorizada
-                                            </p>
-                                        </div>
-                                        <span className="rounded border border-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
-                                            ALLOW
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <div className="flex min-h-28 flex-col items-center justify-center gap-2 text-center">
-                                <LockKeyhole className="size-5 text-zinc-500" />
-                                <p className="text-sm text-zinc-400">
-                                    Nenhuma origem externa configurada.
-                                </p>
-                                <p className="text-xs text-zinc-600">
-                                    O servidor continua restrito ao ambiente local.
-                                </p>
-                            </div>
-                        )}
+            {scopeQuery.isPending ? (
+                <Card className="border-border/60 bg-card/40">
+                    <CardContent className="flex min-h-56 items-center justify-center text-muted-foreground">
+                        <LoaderCircle className="size-5 animate-spin" />
                     </CardContent>
                 </Card>
-
-                <div className="flex flex-col gap-4">
-                    <Card className="border-rose-500/15 bg-rose-500/[0.035]">
-                        <CardHeader className="flex flex-row items-start gap-3">
-                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-rose-400" />
-                            <div>
-                                <CardTitle className="text-sm text-zinc-100">
-                                    Fora do escopo
-                                </CardTitle>
-                                <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-                                    Destinos não autorizados são bloqueados pelo servidor.
-                                    Esta tela é somente leitura; a lista é carregada do
-                                    endpoint /scope.
+            ) : (
+                <motion.div
+                    variants={staggerContainer(0.08)}
+                    initial="hidden"
+                    animate="show"
+                    className="grid gap-4 lg:grid-cols-[1.4fr_1fr]"
+                >
+                    {/* Alvo travado */}
+                    <motion.div variants={fadeUp}>
+                        <Card className="relative h-full overflow-hidden border-primary/25 bg-gradient-to-br from-primary/[0.08] to-card/60">
+                            <CardContent className="p-6">
+                                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                                    <Target className="size-4" />
+                                    Alvo autorizado
+                                </div>
+                                <div className="mt-4 flex items-center gap-3 rounded-2xl border border-border/60 bg-background/50 p-4">
+                                    <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                                        <Lock className="size-5" />
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="break-all font-mono text-sm text-foreground">
+                                            {lockedTarget || targets[0] || "Definido pelo servidor"}
+                                        </p>
+                                        <p className="mt-0.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+                                            {lockedTarget
+                                                ? "Alvo travado · só este endereço é testado"
+                                                : "Allowlist do servidor"}
+                                        </p>
+                                    </div>
+                                    <span className="shrink-0 rounded-md border border-emerald-500/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                                        ALLOW
+                                    </span>
+                                </div>
+                                {targets.length > 1 && (
+                                    <ul className="mt-2 space-y-1.5">
+                                        {targets.slice(1).map((origin) => (
+                                            <li
+                                                key={origin}
+                                                className="break-all rounded-lg border border-border/50 bg-background/30 px-3 py-2 font-mono text-xs text-muted-foreground"
+                                            >
+                                                {origin}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                                <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                                    A tela não cria campo de URL: qualquer outro endereço enviado
+                                    é recusado pelo servidor com <code className="font-mono">403</code>.
                                 </p>
-                            </div>
-                        </CardHeader>
-                        <CardContent className="space-y-2 pt-0">
-                            <div className="flex items-center justify-between border-t border-white/[0.07] pt-3 text-xs">
-                                <span className="text-zinc-500">Métodos permitidos</span>
-                                <span className="font-mono text-zinc-300">
-                                    {scope?.allowed_methods.join(" · ") || "—"}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs">
-                                <span className="text-zinc-500">Redes privadas</span>
-                                <span className="font-mono text-zinc-300">
-                                    {scope?.blocks_private_targets
-                                        ? "bloqueadas (anti-SSRF)"
-                                        : "permitidas"}
-                                </span>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-            </div>
-        </main>
+                            </CardContent>
+                        </Card>
+                    </motion.div>
+
+                    {/* Limites / fora de escopo */}
+                    <motion.div variants={fadeUp} className="grid content-start gap-4">
+                        <Card className="border-rose-500/15 bg-rose-500/[0.035]">
+                            <CardContent className="p-5">
+                                <div className="flex items-start gap-3">
+                                    <AlertTriangle className="mt-0.5 size-4 shrink-0 text-rose-400" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-foreground">
+                                            Fora do escopo
+                                        </p>
+                                        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                                            Destinos não autorizados são bloqueados pelo servidor.
+                                            Esta tela é somente leitura, carregada de{" "}
+                                            <code className="font-mono">/scope</code>.
+                                        </p>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="border-border/60 bg-card/50">
+                            <CardContent className="space-y-3 p-5 text-xs">
+                                <Row
+                                    label="Métodos permitidos"
+                                    value={scope?.allowed_methods.join(" · ") || "—"}
+                                />
+                                <Row
+                                    label="Máx. requisições/s"
+                                    value={String(scope?.limits.max_requests_per_second ?? "—")}
+                                />
+                                <Row
+                                    label="Máx. por campanha"
+                                    value={String(scope?.limits.max_total_requests ?? "—")}
+                                />
+                                <Row
+                                    icon={<ShieldBan className="size-3.5 text-rose-300" />}
+                                    label="Redes privadas"
+                                    value={
+                                        scope?.blocks_private_targets
+                                            ? "bloqueadas (anti-SSRF)"
+                                            : "permitidas"
+                                    }
+                                />
+                            </CardContent>
+                        </Card>
+                    </motion.div>
+                </motion.div>
+            )}
+        </div>
+    );
+}
+
+function Row({
+    label,
+    value,
+    icon,
+}: {
+    label: string;
+    value: string;
+    icon?: React.ReactNode;
+}) {
+    return (
+        <div className="flex items-center justify-between gap-4 border-b border-border/50 pb-2.5 last:border-0 last:pb-0">
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+                {icon}
+                {label}
+            </span>
+            <span className="text-right font-mono text-foreground/90">{value}</span>
+        </div>
     );
 }

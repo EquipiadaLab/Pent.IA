@@ -54,18 +54,18 @@ export function CampaignCreateForm({
   return (
     <Card
       id="campaign-create"
-      className="mt-5 border-rose-500/25 bg-zinc-950/80"
+      className="border-primary/25 bg-card/50 backdrop-blur-sm"
     >
-      <CardHeader className="border-b border-white/[0.07] pb-4">
+      <CardHeader className="border-b border-border/50 pb-4">
         <div className="flex items-center gap-2">
-          <div className="grid size-8 place-items-center rounded-lg bg-rose-500/10 text-rose-400">
+          <div className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary">
             <Shield className="size-4" />
           </div>
           <div>
-            <CardTitle className="text-sm text-zinc-100">
+            <CardTitle className="text-sm text-foreground">
               Configurar campanha autorizada
             </CardTitle>
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               O alvo é travado no servidor. A tela não envia nenhuma URL.
             </p>
           </div>
@@ -87,19 +87,19 @@ export function CampaignCreateForm({
           className="grid gap-4 sm:grid-cols-[1fr_1fr_auto]"
           noValidate
         >
-          <label className="grid content-start gap-2 text-xs text-zinc-400">
+          <label className="grid content-start gap-2 text-xs text-muted-foreground">
             Alvo autorizado
-            <div className="flex h-10 items-center gap-2 rounded-md border border-white/10 bg-zinc-900/60 px-3">
+            <div className="flex h-10 items-center gap-2 rounded-md border border-border/60 bg-background/50 px-3">
               <Lock className="size-3.5 shrink-0 text-emerald-400" />
-              <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200">
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground/90">
                 {lockedTarget || "Definido pelo servidor"}
               </span>
             </div>
-            <span className="text-[11px] text-zinc-600">
+            <span className="text-[11px] text-muted-foreground/70">
               Alvo travado (locked_target). Só este endereço é testado.
             </span>
           </label>
-          <label className="grid content-start gap-2 text-xs text-zinc-400">
+          <label className="grid content-start gap-2 text-xs text-muted-foreground">
             Quem autorizou
             <Controller
               control={control}
@@ -110,7 +110,7 @@ export function CampaignCreateForm({
                   placeholder="Organização / responsável"
                   autoComplete="organization"
                   aria-invalid={Boolean(errors.authorizedBy)}
-                  className="h-10 border-white/10 bg-zinc-900 text-zinc-100 placeholder:text-zinc-600 aria-invalid:border-rose-500"
+                  className="h-10 border-border/60 bg-background/50 text-foreground placeholder:text-muted-foreground/60 aria-invalid:border-rose-500"
                   maxLength={120}
                 />
               )}
@@ -128,7 +128,7 @@ export function CampaignCreateForm({
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="h-10 bg-rose-600 text-white hover:bg-rose-500"
+              className="h-10 bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <Play />
               {isSubmitting ? "Iniciando..." : "Iniciar campanha"}

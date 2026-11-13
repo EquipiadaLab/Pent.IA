@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "motion/react";
 import {
     ClipboardCheck,
     ClipboardX,
@@ -14,28 +15,26 @@ import {
     TriangleAlert,
     Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api, getApiErrorMessage } from "@/lib/api";
 import { ACTIVE_STATES } from "./campanha/helpers";
-import type { Campaign, TimelineEntry } from "./campanha/types";
+import {
+    primaryCampaignId,
+    useCampaignsList,
+} from "@/hooks/use-campaigns";
+import { fadeUp, staggerContainer } from "@/lib/motion";
+import type { TimelineEntry } from "./campanha/types";
+import { PageHeader } from "./layout/page-header";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "./ui/table";
 
 type StatusTone = { label: string; className: string };
 
 const STATUS: Record<string, StatusTone> = {
     permitido: {
         label: "Permitido",
-        className: "border-white/15 bg-white/[0.04] text-zinc-300",
+        className: "border-border/60 bg-muted/30 text-muted-foreground",
     },
     bloqueado: {
         label: "Bloqueado",
@@ -55,7 +54,7 @@ const STATUS: Record<string, StatusTone> = {
     },
     registrado: {
         label: "Registrado",
-        className: "border-white/10 bg-white/[0.03] text-zinc-500",
+        className: "border-border/60 bg-muted/20 text-muted-foreground",
     },
     parado: {
         label: "Parado",
@@ -101,7 +100,7 @@ function describe(entry: TimelineEntry): Omit<AuditRow, "key" | "time" | "search
             return {
                 actor: "agente/planner",
                 action: `Planejou lance${moveSuffix(entry.move)}`,
-                icon: <Lightbulb className="size-3.5 text-rose-300" />,
+                icon: <Lightbulb className="size-3.5 text-primary" />,
                 target: str(d, "test_id") || "—",
                 status: STATUS.registrado,
             };
@@ -109,7 +108,7 @@ function describe(entry: TimelineEntry): Omit<AuditRow, "key" | "time" | "search
             return {
                 actor: "agente/executor",
                 action: `Executou ${str(d, "method") || "requisição"}`,
-                icon: <Zap className="size-3.5 text-rose-300" />,
+                icon: <Zap className="size-3.5 text-primary" />,
                 target: targetLabel(d),
                 status: d.allowed === false ? STATUS.bloqueado : STATUS.permitido,
             };
@@ -147,7 +146,7 @@ function describe(entry: TimelineEntry): Omit<AuditRow, "key" | "time" | "search
             return {
                 actor: "agente/executor",
                 action: `Registrou resultado${moveSuffix(entry.move)}`,
-                icon: <ClipboardCheck className="size-3.5 text-rose-300" />,
+                icon: <ClipboardCheck className="size-3.5 text-primary" />,
                 target: entry.move ? `lance ${String(entry.move).padStart(2, "0")}` : "—",
                 status: STATUS.registrado,
             };
@@ -163,7 +162,7 @@ function describe(entry: TimelineEntry): Omit<AuditRow, "key" | "time" | "search
             return {
                 actor: "sistema",
                 action: entry.summary,
-                icon: <Flag className="size-3.5 text-zinc-400" />,
+                icon: <Flag className="size-3.5 text-muted-foreground" />,
                 target: str(d, "origin") || str(d, "state") || "—",
                 status: STATUS.registrado,
             };
@@ -171,46 +170,21 @@ function describe(entry: TimelineEntry): Omit<AuditRow, "key" | "time" | "search
             return {
                 actor: "sistema",
                 action: entry.summary,
-                icon: <History className="size-3.5 text-zinc-400" />,
+                icon: <History className="size-3.5 text-muted-foreground" />,
                 target: "—",
                 status: STATUS.registrado,
             };
     }
 }
 
-function useClock() {
-    const [now, setNow] = useState(() => new Date());
-    useEffect(() => {
-        const timer = window.setInterval(() => setNow(new Date()), 1000);
-        return () => window.clearInterval(timer);
-    }, []);
-    return now;
-}
-
 export default function Auditoria() {
     const [search, setSearch] = useState("");
-
-    const campaignsQuery = useQuery({
-        queryKey: ["campaigns"],
-        queryFn: async () => {
-            const { data } = await api.get<Campaign[]>("/campaigns");
-            return [...data].sort(
-                (a, b) =>
-                    new Date(b.created_at).getTime() -
-                    new Date(a.created_at).getTime(),
-            );
-        },
-        refetchInterval: 5000,
-    });
-
+    const campaignsQuery = useCampaignsList();
     const campaigns = useMemo(
         () => campaignsQuery.data || [],
         [campaignsQuery.data],
     );
-    const campaignId =
-        campaigns.find((item) => ACTIVE_STATES.includes(item.state))?.id ||
-        campaigns[0]?.id ||
-        "";
+    const campaignId = primaryCampaignId(campaigns);
 
     const auditQuery = useQuery({
         queryKey: ["campaign-audit", campaignId],
@@ -226,17 +200,6 @@ export default function Auditoria() {
             return active && ACTIVE_STATES.includes(active.state) ? 4000 : false;
         },
     });
-
-    const now = useClock();
-    const dateLabel = now
-        .toLocaleDateString("pt-BR", {
-            weekday: "short",
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-        })
-        .toUpperCase();
-    const timeLabel = now.toLocaleTimeString("pt-BR", { hour12: false });
 
     const rows = useMemo<AuditRow[]>(() => {
         const entries = auditQuery.data || [];
@@ -273,41 +236,27 @@ export default function Auditoria() {
     const isSyncing = auditQuery.isFetching;
 
     return (
-        <main className="mx-auto w-full max-w-[1500px] pb-12">
-            <header className="flex flex-wrap items-start justify-between gap-4 pt-8">
-                <div>
-                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-500">
-                        <span className="h-px w-6 bg-rose-500" />
-                        Trilha de auditoria · append only
-                    </p>
-                    <h1 className="mt-2 text-4xl font-semibold tracking-tight">
-                        Trilha de auditoria
-                    </h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        Ações do agente, aprovações humanas e bloqueios em uma única
-                        linha do tempo.
-                    </p>
-                </div>
-                <div className="text-right font-mono text-[11px] leading-relaxed text-zinc-500">
-                    <p>{dateLabel}</p>
-                    <p className="tabular-nums text-zinc-400">{timeLabel} BRT</p>
-                </div>
-            </header>
+        <div className="space-y-5">
+            <PageHeader
+                eyebrow="Append only"
+                title="Trilha de auditoria"
+                description="Ações do agente, aprovações humanas e bloqueios em uma única linha do tempo."
+            />
 
-            <div className="mt-6 rounded-2xl border border-white/10 bg-zinc-950/70">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] p-4">
-                    <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+            <div className="overflow-hidden rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 p-4">
+                    <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
                         <History className="size-4" />
                         {String(rows.length).padStart(2, "0")} eventos nesta campanha
                     </p>
                     <div className="flex items-center gap-2">
                         <div className="relative">
-                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+                            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                             <Input
                                 value={search}
                                 onChange={(event) => setSearch(event.target.value)}
                                 placeholder="Buscar evento..."
-                                className="h-9 w-56 rounded-xl border-white/10 bg-zinc-900 pl-9 text-sm"
+                                className="h-9 w-56 rounded-xl border-border/60 bg-background/50 pl-9 text-sm"
                             />
                         </div>
                         <Button
@@ -315,7 +264,7 @@ export default function Auditoria() {
                             size="sm"
                             disabled={!campaignId || isSyncing}
                             onClick={() => void auditQuery.refetch()}
-                            className="border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/10"
+                            className="rounded-xl border-border/60 bg-card/50"
                         >
                             <RefreshCw className={isSyncing ? "animate-spin" : ""} />
                             Sincronizar
@@ -329,74 +278,54 @@ export default function Auditoria() {
                         {error}
                     </div>
                 ) : isLoading ? (
-                    <div className="flex min-h-48 items-center justify-center text-zinc-500">
+                    <div className="flex min-h-48 items-center justify-center text-muted-foreground">
                         <LoaderCircle className="size-5 animate-spin" />
                     </div>
                 ) : filtered.length === 0 ? (
-                    <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-center text-sm text-zinc-400">
-                        <History className="size-6 text-zinc-600" />
+                    <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                        <History className="size-6 opacity-60" />
                         {rows.length === 0
                             ? "Nenhum evento registrado nesta campanha ainda."
                             : "Nenhum evento corresponde à busca."}
                     </div>
                 ) : (
-                    <Table>
-                        <TableHeader>
-                            <TableRow className="border-white/[0.07] hover:bg-transparent">
-                                <TableHead className="pl-4 text-[10px] uppercase tracking-wider text-zinc-500">
-                                    Horário
-                                </TableHead>
-                                <TableHead className="text-[10px] uppercase tracking-wider text-zinc-500">
-                                    Ator
-                                </TableHead>
-                                <TableHead className="text-[10px] uppercase tracking-wider text-zinc-500">
-                                    Ação
-                                </TableHead>
-                                <TableHead className="text-[10px] uppercase tracking-wider text-zinc-500">
-                                    Alvo
-                                </TableHead>
-                                <TableHead className="pr-4 text-right text-[10px] uppercase tracking-wider text-zinc-500">
-                                    Status
-                                </TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {filtered.map((row) => (
-                                <TableRow
-                                    key={row.key}
-                                    className="border-white/[0.05] hover:bg-white/[0.02]"
+                    <motion.ul
+                        variants={staggerContainer(0.025)}
+                        initial="hidden"
+                        animate="show"
+                        className="divide-y divide-border/40"
+                    >
+                        {filtered.map((row) => (
+                            <motion.li
+                                key={row.key}
+                                variants={fadeUp}
+                                className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-foreground/[0.02]"
+                            >
+                                <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
+                                    {row.time}
+                                </span>
+                                <span className="grid size-7 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/50">
+                                    {row.icon}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <p className="truncate text-sm text-foreground">
+                                        {row.action}
+                                    </p>
+                                    <p className="truncate font-mono text-[11px] text-muted-foreground">
+                                        {row.actor} · {row.target}
+                                    </p>
+                                </div>
+                                <Badge
+                                    variant="outline"
+                                    className={`shrink-0 uppercase tracking-wider ${row.status.className}`}
                                 >
-                                    <TableCell className="pl-4 font-mono text-xs text-zinc-400">
-                                        {row.time}
-                                    </TableCell>
-                                    <TableCell className="font-mono text-xs text-zinc-400">
-                                        {row.actor}
-                                    </TableCell>
-                                    <TableCell>
-                                        <span className="flex items-center gap-2 text-sm text-zinc-200">
-                                            <span className="grid size-6 shrink-0 place-items-center rounded-md border border-white/10 bg-zinc-950">
-                                                {row.icon}
-                                            </span>
-                                            {row.action}
-                                        </span>
-                                    </TableCell>
-                                    <TableCell className="max-w-48 truncate font-mono text-xs text-zinc-400">
-                                        {row.target}
-                                    </TableCell>
-                                    <TableCell className="pr-4 text-right">
-                                        <Badge
-                                            variant="outline"
-                                            className={`uppercase tracking-wider ${row.status.className}`}
-                                        >
-                                            {row.status.label}
-                                        </Badge>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+                                    {row.status.label}
+                                </Badge>
+                            </motion.li>
+                        ))}
+                    </motion.ul>
                 )}
             </div>
-        </main>
+        </div>
     );
 }

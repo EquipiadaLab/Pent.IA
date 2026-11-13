@@ -1,41 +1,32 @@
-import { useQuery } from "@tanstack/react-query";
+import { motion } from "motion/react";
 import {
     ClipboardCheck,
-    LoaderCircle,
     Lock,
     Radar,
     ShieldCheck,
     Timer,
     TriangleAlert,
+    type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { fadeUp, staggerContainer } from "@/lib/motion";
 import type { Scope } from "./campanha/types";
-import {
-    Accordion,
-    AccordionContent,
-    AccordionItem,
-    AccordionTrigger,
-} from "./ui/accordion";
+import { PageHeader } from "./layout/page-header";
 import { Badge } from "./ui/badge";
-import { Separator } from "./ui/separator";
-
-interface RuleDetail {
-    label: string;
-    value: string;
-}
+import { Card, CardContent } from "./ui/card";
 
 interface Rule {
     id: string;
     title: string;
-    icon: React.ReactNode;
+    icon: LucideIcon;
     description: string;
     badge: { label: string; className: string };
-    details: RuleDetail[];
+    details: { label: string; value: string }[];
 }
 
-const ENFORCED_BADGE =
-    "border-emerald-500/25 bg-emerald-500/10 text-emerald-300";
+const ENFORCED = "border-emerald-500/25 bg-emerald-500/10 text-emerald-300";
 
 function buildRules(scope: Scope | null): Rule[] {
     const rps = scope?.limits.max_requests_per_second ?? 2;
@@ -51,10 +42,10 @@ function buildRules(scope: Scope | null): Rule[] {
         {
             id: "SAFE-001",
             title: "Métodos seguros",
-            icon: <Lock className="size-4" />,
+            icon: Lock,
             description:
                 "O executor só pode emitir GET e OPTIONS. Qualquer método mutável é interrompido antes de tocar a rede.",
-            badge: { label: "Enforced", className: ENFORCED_BADGE },
+            badge: { label: "Enforced", className: ENFORCED },
             details: [
                 { label: "Métodos permitidos", value: methods.join(" · ") },
                 { label: "Perfis bloqueados", value: blocked.join(" · ") || "—" },
@@ -63,35 +54,27 @@ function buildRules(scope: Scope | null): Rule[] {
         {
             id: "SCOPE-001",
             title: "Fronteira de escopo",
-            icon: <Radar className="size-4" />,
+            icon: Radar,
             description:
-                "O alvo é travado no servidor: toda requisição é comparada com o alvo autorizado, nunca apenas com a intenção do prompt.",
+                "O alvo é travado no servidor: toda requisição é comparada com o alvo autorizado, nunca com a intenção do prompt.",
             badge: lockedTarget
                 ? {
                       label: "Alvo travado",
                       className: "border-sky-400/30 bg-sky-400/10 text-sky-300",
                   }
-                : {
-                      label: "Allowlist do servidor",
-                      className: ENFORCED_BADGE,
-                  },
+                : { label: "Allowlist do servidor", className: ENFORCED },
             details: [
-                {
-                    label: "Alvo",
-                    value: lockedTarget ?? "definido pela allowlist do servidor",
-                },
+                { label: "Alvo", value: lockedTarget ?? "allowlist do servidor" },
                 {
                     label: "Redes privadas",
-                    value: blocksPrivate
-                        ? "bloqueadas (anti-SSRF)"
-                        : "permitidas",
+                    value: blocksPrivate ? "bloqueadas (anti-SSRF)" : "permitidas",
                 },
             ],
         },
         {
             id: "RATE-002",
             title: "Ritmo controlado",
-            icon: <Timer className="size-4" />,
+            icon: Timer,
             description:
                 "Cada origem recebe no máximo algumas requisições por segundo para reduzir o impacto no ambiente autorizado.",
             badge: {
@@ -109,17 +92,17 @@ function buildRules(scope: Scope | null): Rule[] {
         {
             id: "HITL-001",
             title: "Aprovação humana",
-            icon: <ClipboardCheck className="size-4" />,
+            icon: ClipboardCheck,
             description:
                 "Ações sensíveis ficam em fila com contexto e evidência até que uma pessoa aprove ou rejeite.",
             badge: preapproval?.active.length
                 ? {
                       label: `${preapproval.active.length} pré-aprovados`,
-                      className: ENFORCED_BADGE,
+                      className: ENFORCED,
                   }
                 : {
                       label: "Em fila",
-                      className: "border-white/15 bg-white/[0.04] text-zinc-300",
+                      className: "border-border/60 bg-muted/30 text-muted-foreground",
                   },
             details: [
                 {
@@ -128,22 +111,10 @@ function buildRules(scope: Scope | null): Rule[] {
                         ? preapproval.active.join(" · ")
                         : "nenhuma",
                 },
-                {
-                    label: "Aprovado por",
-                    value: preapproval?.approved_by || "—",
-                },
+                { label: "Aprovado por", value: preapproval?.approved_by || "—" },
             ],
         },
     ];
-}
-
-function useClock() {
-    const [now, setNow] = useState(() => new Date());
-    useEffect(() => {
-        const timer = window.setInterval(() => setNow(new Date()), 1000);
-        return () => window.clearInterval(timer);
-    }, []);
-    return now;
 }
 
 export default function Regras() {
@@ -151,66 +122,38 @@ export default function Regras() {
         queryKey: ["scope"],
         queryFn: async () => (await api.get<Scope>("/scope")).data,
     });
-
     const scope = scopeQuery.data ?? null;
     const rules = useMemo(() => buildRules(scope), [scope]);
-    const now = useClock();
-
-    const dateLabel = now
-        .toLocaleDateString("pt-BR", {
-            weekday: "short",
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-        })
-        .toUpperCase();
-    const timeLabel = now.toLocaleTimeString("pt-BR", { hour12: false });
 
     return (
-        <main className="mx-auto w-full max-w-[1500px] pb-12">
-            <header className="flex flex-wrap items-start justify-between gap-4 pt-8">
-                <div>
-                    <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-rose-500">
-                        <span className="h-px w-6 bg-rose-500" />
-                        Motor de políticas
-                    </p>
-                    <h1 className="mt-2 text-4xl font-semibold tracking-tight">
-                        Regras predefinidas
-                    </h1>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                        Determinismo no executor. Explicação no agente. Segurança
-                        por construção.
-                    </p>
-                </div>
-                <div className="text-right font-mono text-[11px] leading-relaxed text-zinc-500">
-                    <p>{dateLabel}</p>
-                    <p className="tabular-nums text-zinc-400">{timeLabel} BRT</p>
-                </div>
-            </header>
+        <div className="space-y-5">
+            <PageHeader
+                eyebrow="Motor de políticas"
+                title="Regras de engajamento"
+                description="Determinismo no executor. Explicação no agente. Segurança por construção."
+            />
 
-            <div className="mt-6 flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
                 <Badge
                     variant="outline"
-                    className="border-white/10 bg-white/[0.03] uppercase tracking-wider text-zinc-400"
+                    className="border-border/60 bg-card/50 uppercase tracking-wider text-muted-foreground"
                 >
                     {rules.length} regras ativas
                 </Badge>
                 <Badge
                     variant="outline"
-                    className={`uppercase tracking-wider ${ENFORCED_BADGE}`}
+                    className={`uppercase tracking-wider ${ENFORCED}`}
                 >
                     Impostas pelo servidor
                 </Badge>
             </div>
 
             {scopeQuery.isError && (
-                <div className="mt-4 flex items-center gap-3 rounded-xl border border-rose-500/30 bg-rose-500/[0.06] px-4 py-3 text-sm text-rose-200">
+                <div className="flex items-center gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/[0.06] px-4 py-3 text-sm text-rose-200">
                     <TriangleAlert className="size-4 shrink-0" />
-                    <span className="flex-1">
-                        {getApiErrorMessage(scopeQuery.error)}
-                    </span>
+                    <span className="flex-1">{getApiErrorMessage(scopeQuery.error)}</span>
                     <button
-                        className="text-rose-200/80 underline-offset-2 hover:underline"
+                        className="underline-offset-2 hover:underline"
                         onClick={() => void scopeQuery.refetch()}
                     >
                         Tentar de novo
@@ -218,74 +161,72 @@ export default function Regras() {
                 </div>
             )}
 
-            {scopeQuery.isPending ? (
-                <div className="mt-4 flex min-h-56 items-center justify-center rounded-2xl border border-white/10 bg-zinc-950/70 text-zinc-500">
-                    <LoaderCircle className="size-5 animate-spin" />
-                </div>
-            ) : (
-                <Accordion
-                    multiple
-                    defaultValue={["SAFE-001"]}
-                    className="mt-4 border-white/10 bg-zinc-950/70"
-                >
-                    {rules.map((rule) => (
-                        <AccordionItem
+            <motion.div
+                variants={staggerContainer(0.08)}
+                initial="hidden"
+                animate="show"
+                className="grid gap-3 sm:grid-cols-2"
+            >
+                {rules.map((rule) => {
+                    const Icon = rule.icon;
+                    return (
+                        <motion.div
                             key={rule.id}
-                            value={rule.id}
-                            className="border-white/[0.07] data-open:bg-white/[0.02]"
+                            variants={fadeUp}
+                            whileHover={{ y: -3 }}
                         >
-                            <AccordionTrigger className="items-center px-5 py-4 hover:no-underline">
-                                <span className="flex flex-1 items-center gap-3">
-                                    <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-300">
-                                        {rule.icon}
-                                    </span>
-                                    <span className="min-w-0">
-                                        <span className="flex flex-wrap items-center gap-2">
-                                            <span className="text-sm font-medium text-zinc-100">
-                                                {rule.title}
-                                            </span>
-                                            <Badge
-                                                variant="outline"
-                                                className={`uppercase tracking-wider ${rule.badge.className}`}
+                            <Card className="h-full border-border/60 bg-card/50 backdrop-blur-sm transition-colors hover:border-border">
+                                <CardContent className="flex h-full flex-col p-5">
+                                    <div className="flex items-start gap-3">
+                                        <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
+                                            <Icon className="size-5" />
+                                        </span>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h2 className="text-sm font-semibold text-foreground">
+                                                    {rule.title}
+                                                </h2>
+                                                <Badge
+                                                    variant="outline"
+                                                    className={`uppercase tracking-wider ${rule.badge.className}`}
+                                                >
+                                                    {rule.badge.label}
+                                                </Badge>
+                                            </div>
+                                            <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                                                {rule.id} · servidor enforced
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                                        {rule.description}
+                                    </p>
+
+                                    <div className="mt-3 flex flex-wrap gap-1.5">
+                                        {rule.details.map((detail) => (
+                                            <span
+                                                key={detail.label}
+                                                className="rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-[11px] text-foreground/90"
                                             >
-                                                {rule.badge.label}
-                                            </Badge>
-                                        </span>
-                                        <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-wider text-zinc-500">
-                                            {rule.id} · Servidor enforced
-                                        </span>
-                                    </span>
-                                </span>
-                            </AccordionTrigger>
-                            <AccordionContent className="px-5">
-                                <p className="pl-12 text-sm leading-relaxed text-zinc-400">
-                                    {rule.description}
-                                </p>
-                                <div className="mt-3 flex flex-wrap gap-2 pl-12">
-                                    {rule.details.map((detail) => (
-                                        <Badge
-                                            key={detail.label}
-                                            variant="outline"
-                                            className="border-white/10 bg-white/[0.03] font-normal text-zinc-300"
-                                        >
-                                            <span className="text-zinc-500">
-                                                {detail.label}:
-                                            </span>{" "}
-                                            {detail.value}
-                                        </Badge>
-                                    ))}
-                                </div>
-                                <Separator className="my-4 bg-white/[0.06]" />
-                                <p className="flex items-center gap-1.5 pl-12 text-xs text-emerald-300">
-                                    <ShieldCheck className="size-3.5" />
-                                    Imposta pelo servidor — a tela não consegue
-                                    afrouxar esta regra.
-                                </p>
-                            </AccordionContent>
-                        </AccordionItem>
-                    ))}
-                </Accordion>
-            )}
-        </main>
+                                                <span className="text-muted-foreground">
+                                                    {detail.label}:
+                                                </span>{" "}
+                                                {detail.value}
+                                            </span>
+                                        ))}
+                                    </div>
+
+                                    <p className="mt-auto flex items-center gap-1.5 pt-4 text-xs text-emerald-300">
+                                        <ShieldCheck className="size-3.5" />
+                                        A tela não consegue afrouxar esta regra.
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </motion.div>
+                    );
+                })}
+            </motion.div>
+        </div>
     );
 }
