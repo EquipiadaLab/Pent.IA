@@ -147,6 +147,35 @@ export function moveTone(move: CampaignMove) {
   return "border-white/10 bg-white/[0.02]";
 }
 
+/** Bip curto quando surge um lance que precisa da sua aprovação. */
+export function playApprovalNotification() {
+  if (typeof window === "undefined" || typeof window.AudioContext === "undefined")
+    return;
+
+  const context = new window.AudioContext();
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  const startAt = context.currentTime;
+
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(880, startAt);
+  oscillator.frequency.setValueAtTime(1175, startAt + 0.12);
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(0.12, startAt + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.38);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.onended = () => void context.close();
+
+  void context
+    .resume()
+    .then(() => {
+      oscillator.start(context.currentTime);
+      oscillator.stop(context.currentTime + 0.4);
+    })
+    .catch(() => void context.close());
+}
+
 export function MoveIcon({ move }: { move: CampaignMove }) {
   if (move.approval === "pending")
     return <LockKeyhole className="size-3.5 text-amber-300" />;
