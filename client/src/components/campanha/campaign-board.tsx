@@ -1,7 +1,7 @@
 import {
   Activity,
-  ArrowRight,
   Bot,
+  Bug,
   Check,
   ChevronRight,
   Circle,
@@ -11,17 +11,15 @@ import {
   FileSearch,
   FileText,
   LoaderCircle,
-  LockKeyhole,
   ScanSearch,
   ShieldAlert,
   Square,
   Terminal,
   Wrench,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   MoveIcon,
   formatTime,
@@ -42,10 +40,7 @@ interface CampaignBoardProps {
   campaign: Campaign;
   latestMove: CampaignMove | null;
   active: boolean;
-  pendingAction: string;
   campaignError: string;
-  actionError: string;
-  onDecide: (moveNumber: number, decision: "approve" | "deny") => void;
   isStopping: boolean;
   stopError: string;
   onStop: () => void;
@@ -54,6 +49,9 @@ interface CampaignBoardProps {
   downloadError: string;
   canOpenReport: boolean;
   onOpenReport: () => void;
+  canGenerateCves: boolean;
+  isGeneratingCves: boolean;
+  onGenerateCves: () => void;
 }
 
 /* ------------------------------------------------------------------ shell */
@@ -115,10 +113,7 @@ export function CampaignBoard({
   campaign,
   latestMove,
   active,
-  pendingAction,
   campaignError,
-  actionError,
-  onDecide,
   isStopping,
   stopError,
   onStop,
@@ -127,8 +122,10 @@ export function CampaignBoard({
   downloadError,
   canOpenReport,
   onOpenReport,
+  canGenerateCves,
+  isGeneratingCves,
+  onGenerateCves,
 }: CampaignBoardProps) {
-  const pendingMoves = campaign.moves.filter((m) => m.approval === "pending");
   const [selectedMove, setSelectedMove] = useState<number | null>(null);
   const activeMove =
     campaign.moves.find((m) => m.move === selectedMove) ?? latestMove;
@@ -150,25 +147,6 @@ export function CampaignBoard({
       />
 
       <div className="flex min-w-0 flex-col gap-4">
-        <AnimatePresence initial={false}>
-          {pendingMoves.length > 0 && (
-            <motion.div
-              key="approvals"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-            >
-              <ApprovalsCard
-                pendingMoves={pendingMoves}
-                pendingAction={pendingAction}
-                actionError={actionError}
-                onDecide={onDecide}
-                onSelectMove={setSelectedMove}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         <ResultCard
           move={activeMove}
           findingsCount={findingsCount}
@@ -177,6 +155,9 @@ export function CampaignBoard({
           onDownloadReport={onDownloadReport}
           isDownloadingReport={isDownloadingReport}
           downloadError={downloadError}
+          canGenerateCves={canGenerateCves}
+          isGeneratingCves={isGeneratingCves}
+          onGenerateCves={onGenerateCves}
         />
       </div>
     </div>
@@ -354,139 +335,6 @@ function TimelineCard({
   );
 }
 
-/* -------------------------------------------------------------- approvals */
-
-function ApprovalsCard({
-  pendingMoves,
-  pendingAction,
-  actionError,
-  onDecide,
-  onSelectMove,
-}: {
-  pendingMoves: CampaignMove[];
-  pendingAction: string;
-  actionError: string;
-  onDecide: CampaignBoardProps["onDecide"];
-  onSelectMove: (move: number) => void;
-}) {
-  const notified = useRef<number | null>(null);
-  const head = pendingMoves[0] ?? null;
-  const headNumber = head?.move ?? null;
-  const rest = pendingMoves.slice(1);
-
-  useEffect(() => {
-    if (headNumber === null) {
-      notified.current = null;
-      return;
-    }
-    if (notified.current === headNumber) return;
-    notified.current = headNumber;
-    playApprovalNotification();
-  }, [headNumber]);
-
-  if (!head) return null;
-
-  return (
-    <Panel className="border-amber-400/30 ring-1 ring-amber-400/10">
-      <PanelHead
-        icon={LockKeyhole}
-        title="Aguardando aprovação"
-        accent="text-amber-300"
-        right={
-          <Badge
-            variant="outline"
-            className="border-amber-400/30 bg-amber-400/10 uppercase tracking-wider text-amber-200"
-          >
-            {pendingMoves.length}
-          </Badge>
-        }
-      />
-
-      <div className="p-4">
-        <button
-          type="button"
-          onClick={() => onSelectMove(head.move)}
-          className="w-full rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-3 text-left transition-colors hover:border-amber-400/50"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-semibold text-foreground">
-              {head.title}
-            </span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-              #{String(head.move).padStart(2, "0")} · {head.test_id}
-            </span>
-          </div>
-          {head.plan?.hypothesis && (
-            <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-              {head.plan.hypothesis}
-            </p>
-          )}
-        </button>
-
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button
-            variant="outline"
-            disabled={Boolean(pendingAction)}
-            onClick={() => onDecide(head.move, "deny")}
-            className="border-border/60 bg-transparent text-foreground/80 hover:bg-foreground/5"
-          >
-            {pendingAction === `deny-${head.move}` ? (
-              <LoaderCircle className="animate-spin" />
-            ) : (
-              <X />
-            )}
-            Negar
-          </Button>
-          <Button
-            disabled={Boolean(pendingAction)}
-            onClick={() => onDecide(head.move, "approve")}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            {pendingAction === `approve-${head.move}` ? (
-              <LoaderCircle className="animate-spin" />
-            ) : (
-              <ArrowRight />
-            )}
-            Aprovar
-          </Button>
-        </div>
-
-        {actionError && (
-          <div className="mt-3">
-            <ApiErrorState compact message={actionError} />
-          </div>
-        )}
-
-        {rest.length > 0 && (
-          <div className="mt-3 border-t border-border/50 pt-3">
-            <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-              Na fila ({rest.length})
-            </p>
-            <ul className="flex flex-col gap-1.5">
-              {rest.map((move) => (
-                <li key={move.move}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectMove(move.move)}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-border/60 bg-foreground/[0.02] px-3 py-1.5 text-left transition-colors hover:border-foreground/20"
-                  >
-                    <span className="truncate text-xs text-foreground/90">
-                      {move.title}
-                    </span>
-                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                      #{String(move.move).padStart(2, "0")}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
-    </Panel>
-  );
-}
-
 /* ----------------------------------------------------------------- result */
 
 const VERDICT: Record<string, { label: string; className: string }> = {
@@ -512,6 +360,9 @@ function ResultCard({
   onDownloadReport,
   isDownloadingReport,
   downloadError,
+  canGenerateCves,
+  isGeneratingCves,
+  onGenerateCves,
 }: {
   move: CampaignMove | null;
   findingsCount: number;
@@ -520,6 +371,9 @@ function ResultCard({
   onDownloadReport: () => void;
   isDownloadingReport: boolean;
   downloadError: string;
+  canGenerateCves: boolean;
+  isGeneratingCves: boolean;
+  onGenerateCves: () => void;
 }) {
   const [showEvidence, setShowEvidence] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -631,6 +485,16 @@ function ResultCard({
                   "Sem risco relevante registrado para este lance."}
               </Section>
 
+              {move.exploitation_scenario && (
+                <Section
+                  icon={Bug}
+                  iconClass="text-rose-300"
+                  label="Como seria explorado"
+                >
+                  {move.exploitation_scenario}
+                </Section>
+              )}
+
               <Section icon={Wrench} iconClass="text-primary" label="Solução sugerida" tone="primary">
                 {move.recommendation || "Nenhuma ação necessária até aqui."}
               </Section>
@@ -733,6 +597,21 @@ function ResultCard({
             Ver Game Review
           </Button>
         )}
+        {canGenerateCves && (
+          <Button
+            variant="outline"
+            disabled={isGeneratingCves}
+            onClick={onGenerateCves}
+            className="w-full border-rose-400/30 bg-rose-400/[0.06] text-rose-200 hover:bg-rose-400/10"
+          >
+            {isGeneratingCves ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <Bug />
+            )}
+            Gerar CVEs (NVD)
+          </Button>
+        )}
         <Button
           variant="outline"
           disabled={isDownloadingReport}
@@ -808,31 +687,3 @@ function Section({
   );
 }
 
-/* --------------------------------------------------------------- audio */
-
-function playApprovalNotification() {
-  if (typeof window.AudioContext === "undefined") return;
-
-  const context = new window.AudioContext();
-  const oscillator = context.createOscillator();
-  const gain = context.createGain();
-  const startAt = context.currentTime;
-
-  oscillator.type = "sine";
-  oscillator.frequency.setValueAtTime(880, startAt);
-  oscillator.frequency.setValueAtTime(1175, startAt + 0.12);
-  gain.gain.setValueAtTime(0.0001, startAt);
-  gain.gain.exponentialRampToValueAtTime(0.12, startAt + 0.02);
-  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.38);
-  oscillator.connect(gain);
-  gain.connect(context.destination);
-  oscillator.onended = () => void context.close();
-
-  void context
-    .resume()
-    .then(() => {
-      oscillator.start(context.currentTime);
-      oscillator.stop(context.currentTime + 0.4);
-    })
-    .catch(() => void context.close());
-}

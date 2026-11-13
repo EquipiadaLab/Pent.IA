@@ -75,6 +75,7 @@ export interface CampaignMove {
   attack_technique_id: string | null;
   attack_technique_name: string | null;
   attack_url: string | null;
+  exploitation_scenario?: string | null;
   started_at: string | null;
   finished_at: string | null;
 }
@@ -214,6 +215,53 @@ export interface TimelineEntry {
   move: number | null;
   summary: string;
   details: Record<string, unknown>;
+}
+
+export interface AgentParticipation {
+  agent: string;
+  tactic_id: string | null;
+  tactic_name: string | null;
+  moves_recommended: number;
+  moves_approved: number;
+  moves_denied: number;
+  findings: number;
+  techniques_used: string[];
+}
+
+export interface AgentsParticipationResponse {
+  campaign_id: string;
+  agents: AgentParticipation[];
+}
+
+export interface CveExploit {
+  url: string;
+  source: string | null;
+}
+
+export interface CveItem {
+  cve_id: string;
+  description: string | null;
+  cvss_score: number | null;
+  cvss_severity: string | null;
+  cvss_vector: string | null;
+  cwe_ids: string[];
+  published: string | null;
+  nvd_url: string | null;
+  exploits: CveExploit[];
+}
+
+export interface CveMatch {
+  search_term: string;
+  move: number | null;
+  cves: CveItem[];
+  queried_at: string | null;
+  source: string | null;
+  error: string | null;
+}
+
+export interface CvesResponse {
+  campaign_id: string;
+  matches: CveMatch[];
 }
 
 export interface CreateCampaignBody {

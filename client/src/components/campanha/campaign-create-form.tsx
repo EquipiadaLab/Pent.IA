@@ -1,14 +1,15 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Lock, Play, Shield } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
-import { z } from "zod";
-import { Button } from "../ui/button";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "../ui/card";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { ApiErrorState } from "./api-error-state";
 
@@ -18,6 +19,12 @@ const campaignFormSchema = z.object({
     .trim()
     .min(1, "Informe quem autorizou a campanha.")
     .max(120, "Use até 120 caracteres."),
+  moveLimit: z
+    .number()
+    .int("Use um número inteiro.")
+    .min(3, "Mínimo de 3 lances.")
+    .max(25, "Máximo de 25 lances.")
+    .optional(),
 });
 
 export type CampaignFormValues = z.infer<typeof campaignFormSchema>;
@@ -48,6 +55,7 @@ export function CampaignCreateForm({
     resolver: zodResolver(campaignFormSchema),
     defaultValues: {
       authorizedBy: "",
+      moveLimit: undefined,
     },
   });
 
@@ -84,7 +92,7 @@ export function CampaignCreateForm({
         <form
           id="create-campaign-form"
           onSubmit={handleSubmit(onSubmit)}
-          className="grid gap-4 sm:grid-cols-[1fr_1fr_auto]"
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_0.7fr_auto]"
           noValidate
         >
           <label className="grid content-start gap-2 text-xs text-muted-foreground">
@@ -118,6 +126,43 @@ export function CampaignCreateForm({
             {errors.authorizedBy && (
               <span className="text-[11px] text-rose-300">
                 {errors.authorizedBy.message}
+              </span>
+            )}
+          </label>
+          <label className="grid content-start gap-2 text-xs text-muted-foreground">
+            Número de lances
+            <Controller
+              control={control}
+              name="moveLimit"
+              render={({ field }) => (
+                <Input
+                  type="number"
+                  min={8}
+                  max={25}
+                  inputMode="numeric"
+                  placeholder="8 a 25"
+                  value={field.value ?? ""}
+                  onChange={(event) =>
+                    field.onChange(
+                      event.target.value === ""
+                        ? undefined
+                        : event.target.valueAsNumber,
+                    )
+                  }
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
+                  aria-invalid={Boolean(errors.moveLimit)}
+                  className="h-10 border-border/60 bg-background/50 text-foreground placeholder:text-muted-foreground/60 aria-invalid:border-rose-500"
+                />
+              )}
+            />
+            <span className="text-[11px] text-muted-foreground/70">
+              Alvo de 3 a 25. A campanha é encerrada ao atingi-lo.
+            </span>
+            {errors.moveLimit && (
+              <span className="text-[11px] text-rose-300">
+                {errors.moveLimit.message}
               </span>
             )}
           </label>

@@ -4,24 +4,32 @@ import {
   AGENTS,
   deriveAgentActivity,
   type AgentActivity,
+  type AgentDef,
 } from "@/data/agents";
 import type { Campaign } from "@/components/campanha/types";
 
 interface AgentsConstellationProps {
   campaign: Campaign | null;
+  selectedId: string;
+  onSelect: (agent: AgentDef) => void;
 }
 
-const RADIUS = 34; // % do contêiner
+const RADIUS = 36; // % do contêiner
 
 function nodePosition(index: number, total: number) {
-  const angle = (index / total) * 2 * Math.PI; // começa à direita
+  // começa no topo e distribui em círculo
+  const angle = (index / total) * 2 * Math.PI - Math.PI / 2;
   return {
     left: 50 + RADIUS * Math.cos(angle),
     top: 50 + RADIUS * Math.sin(angle),
   };
 }
 
-export function AgentsConstellation({ campaign }: AgentsConstellationProps) {
+export function AgentsConstellation({
+  campaign,
+  selectedId,
+  onSelect,
+}: AgentsConstellationProps) {
   const reduce = useReducedMotion();
   const master = AGENTS.find((a) => a.master) ?? AGENTS[0];
   const specialists = AGENTS.filter((a) => !a.master);
@@ -31,7 +39,7 @@ export function AgentsConstellation({ campaign }: AgentsConstellationProps) {
   );
 
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[340px]">
+    <div className="relative mx-auto aspect-square w-full max-w-[320px]">
       {/* feixes */}
       <svg
         viewBox="0 0 100 100"
@@ -52,12 +60,12 @@ export function AgentsConstellation({ campaign }: AgentsConstellationProps) {
                 className={working ? accent.text : "text-border"}
                 stroke="currentColor"
                 strokeWidth={working ? 0.7 : 0.4}
-                strokeOpacity={working ? 0.9 : 0.35}
+                strokeOpacity={working ? 0.9 : 0.3}
                 strokeDasharray="2 2"
               />
               {working && !reduce && (
                 <motion.circle
-                  r="1.4"
+                  r="1.3"
                   className={accent.text}
                   fill="currentColor"
                   initial={{ cx: 50, cy: 50 }}
@@ -75,7 +83,11 @@ export function AgentsConstellation({ campaign }: AgentsConstellationProps) {
       </svg>
 
       {/* nó central (mestre) */}
-      <CenterNode activity={masterActivity} />
+      <CenterNode
+        activity={masterActivity}
+        selected={selectedId === master.id}
+        onSelect={() => onSelect(master)}
+      />
 
       {/* especialistas */}
       {specialists.map((agent, i) => {
@@ -84,6 +96,8 @@ export function AgentsConstellation({ campaign }: AgentsConstellationProps) {
           <OrbitNode
             key={agent.id}
             activity={activities[i]}
+            selected={selectedId === agent.id}
+            onSelect={() => onSelect(agent)}
             left={pos.left}
             top={pos.top}
           />
@@ -93,13 +107,27 @@ export function AgentsConstellation({ campaign }: AgentsConstellationProps) {
   );
 }
 
-function CenterNode({ activity }: { activity: AgentActivity }) {
+function CenterNode({
+  activity,
+  selected,
+  onSelect,
+}: {
+  activity: AgentActivity;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const reduce = useReducedMotion();
   const { agent, working } = activity;
   const accent = ACCENT[agent.accent];
   const Icon = agent.icon;
   return (
-    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={`Ver ${agent.name}`}
+      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 outline-none"
+    >
       {working && !reduce && (
         <motion.span
           className={`absolute inset-0 rounded-full ${accent.soft}`}
@@ -110,23 +138,29 @@ function CenterNode({ activity }: { activity: AgentActivity }) {
       <motion.div
         animate={reduce ? undefined : { y: [0, -4, 0] }}
         transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-        className={`relative grid size-20 place-items-center rounded-full border-2 ${accent.border} ${accent.soft} ${accent.glow} backdrop-blur-sm`}
+        className={`relative grid size-[72px] place-items-center rounded-full border-2 ${accent.border} ${accent.soft} ${accent.glow} backdrop-blur-sm transition-transform ${
+          selected ? `ring-2 ${accent.ring} ring-offset-2 ring-offset-background` : ""
+        }`}
       >
         <Icon className={`size-8 ${accent.text}`} />
       </motion.div>
-      <p className="mt-2 text-center text-[11px] font-semibold text-foreground">
+      <span className="mt-1.5 block text-center text-[11px] font-semibold text-foreground">
         {agent.name}
-      </p>
-    </div>
+      </span>
+    </button>
   );
 }
 
 function OrbitNode({
   activity,
+  selected,
+  onSelect,
   left,
   top,
 }: {
   activity: AgentActivity;
+  selected: boolean;
+  onSelect: () => void;
   left: number;
   top: number;
 }) {
@@ -135,8 +169,13 @@ function OrbitNode({
   const accent = ACCENT[agent.accent];
   const Icon = agent.icon;
   return (
-    <motion.div
-      className="absolute flex flex-col items-center"
+    <motion.button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      aria-label={`Ver ${agent.name}`}
+      title={agent.name}
+      className="absolute flex flex-col items-center outline-none"
       style={{ left: `${left}%`, top: `${top}%`, x: "-50%", y: "-50%" }}
       initial={{ opacity: 0, scale: 0.6 }}
       animate={{ opacity: 1, scale: 1 }}
@@ -144,30 +183,33 @@ function OrbitNode({
     >
       {working && !reduce && (
         <motion.span
-          className={`absolute top-0 size-14 rounded-full ${accent.soft}`}
+          className={`absolute top-0 size-11 rounded-full ${accent.soft}`}
           animate={{ scale: [1, 1.6], opacity: [0.45, 0] }}
           transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
         />
       )}
       <div
-        className={`relative grid size-14 place-items-center rounded-full border ${
-          working ? `${accent.border} ${accent.glow}` : "border-border/70"
-        } bg-card/70 backdrop-blur-sm transition-colors`}
+        className={`relative grid size-11 place-items-center rounded-full border bg-card/70 backdrop-blur-sm transition-colors ${
+          selected
+            ? `${accent.border} ${accent.glow} ${accent.soft}`
+            : working
+              ? `${accent.border}`
+              : "border-border/70"
+        }`}
       >
         <Icon
-          className={`size-6 ${working ? accent.text : "text-muted-foreground"}`}
+          className={`size-[18px] ${
+            selected || working ? accent.text : "text-muted-foreground"
+          }`}
         />
         {handled > 0 && (
           <span
-            className={`absolute -right-1 -top-1 grid size-5 place-items-center rounded-full border border-background text-[10px] font-bold text-background ${accent.dot}`}
+            className={`absolute -right-1 -top-1 grid size-4 place-items-center rounded-full border border-background text-[9px] font-bold text-background ${accent.dot}`}
           >
             {handled}
           </span>
         )}
       </div>
-      <p className="mt-1.5 text-center text-[10px] font-medium text-muted-foreground">
-        {agent.name}
-      </p>
-    </motion.div>
+    </motion.button>
   );
 }

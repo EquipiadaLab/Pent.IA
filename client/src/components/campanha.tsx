@@ -1,48 +1,60 @@
+import { ACCENT, agentForMove } from "@/data/agents";
+import axios from "axios";
 import { api, getApiErrorMessage } from "@/lib/api";
+import { fadeUp, scaleIn, staggerContainer } from "@/lib/motion";
 import {
     useMutation,
     useQuery,
     useQueryClient,
 } from "@tanstack/react-query";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
     Activity,
+    ArrowRight,
     Check,
     Gauge,
     LoaderCircle,
+    LockKeyhole,
     Play,
     Radio,
     RefreshCw,
     ShieldAlert,
     Sparkles,
     X,
+    Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { PageHeader } from "./layout/page-header";
-import { AgentsConstellation } from "./agents/agents-constellation";
-import { AgentRoster } from "./agents/agent-roster";
-import { fadeUp, scaleIn, staggerContainer } from "@/lib/motion";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AgentsField } from "./agents/agents-field";
 import { CampaignBoard } from "./campanha/campaign-board";
 import {
     CampaignCreateForm,
     type CampaignFormValues,
 } from "./campanha/campaign-create-form";
+import { CampaignCves, CampaignCvesError } from "./campanha/campaign-cves";
 import {
     CampaignReport,
     CampaignReportError,
 } from "./campanha/campaign-report";
-import { ACTIVE_STATES, durationLabel, stateLabel } from "./campanha/helpers";
+import {
+    ACTIVE_STATES,
+    durationLabel,
+    playApprovalNotification,
+    stateLabel,
+} from "./campanha/helpers";
 import type {
+    AgentsParticipationResponse,
     Campaign,
+    CampaignMove,
     CampaignStatus,
     CreateCampaignBody,
-    GameReview,
-    Scope,
+    CvesResponse,
+    GameReview, MoveGrade, Scope
 } from "./campanha/types";
 import {
     useCampaignWebSocket,
     type CampaignWebSocketState,
 } from "./campanha/use-campaign-websocket";
+import { PageHeader } from "./layout/page-header";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import {
@@ -62,6 +74,16 @@ export default function Campanha() {
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
     const [showReport, setShowReport] = useState(false);
+    const [showCves, setShowCves] = useState(false);
+    // Piloto automático: aprova sozinho os lances menos graves e só segura os
+    // de severidade "high" (os mais graves) para decisão humana.
+    const [autoPilot, setAutoPilot] = useState(false);
+    const autoApprovedRef = useRef<Set<string>>(new Set());
+    const lastReconcileRef = useRef(0);
+    // Limite de lances por campanha (escolhido no formulário). A campanha é
+    // encerrada automaticamente ao atingir esse número.
+    const [moveLimits, setMoveLimits] = useState<Record<string, number>>({});
+    const stoppedForLimitRef = useRef<Set<string>>(new Set());
     const [webSocketState, setWebSocketState] =
         useState<CampaignWebSocketState>({ status: "idle", message: "" });
 
@@ -104,12 +126,14 @@ export default function Campanha() {
             (await api.get<Campaign>(`/campaigns/${encodeURIComponent(campaignId)}`))
                 .data,
         enabled: Boolean(campaignId),
-        refetchInterval: (query) =>
-            query.state.data &&
-            ACTIVE_STATES.includes(query.state.data.state) &&
-            webSocketState.status !== "connected"
-                ? 1500
-                : false,
+        // Mesmo com o WebSocket conectado mantemos um polling lento como rede de
+        // segurança: se um evento (ex.: approval_requested) se perder numa rajada
+        // rápida, o estado completo da campanha se reconcilia sozinho.
+        refetchInterval: (query) => {
+            const data = query.state.data;
+            if (!data || !ACTIVE_STATES.includes(data.state)) return false;
+            return webSocketState.status === "connected" ? 4000 : 1500;
+        },
     });
     const statusQuery = useQuery({
         queryKey: ["campaign-status", campaignId],
@@ -120,12 +144,11 @@ export default function Campanha() {
                 )
             ).data,
         enabled: Boolean(campaignId),
-        refetchInterval: (query) =>
-            query.state.data &&
-            ACTIVE_STATES.includes(query.state.data.state) &&
-            webSocketState.status !== "connected"
-                ? 1500
-                : false,
+        refetchInterval: (query) => {
+            const data = query.state.data;
+            if (!data || !ACTIVE_STATES.includes(data.state)) return false;
+            return webSocketState.status === "connected" ? 4000 : 1500;
+        },
     });
     const campaign = campaignQuery.data || null;
     const campaignStatus = statusQuery.data || null;
@@ -147,6 +170,37 @@ export default function Campanha() {
                 )
             ).data,
         enabled: Boolean(campaignId) && campaignIsTerminal && showReport,
+        staleTime: 5 * 60_000,
+    });
+
+    // Participação agregada por agente (seção 0B). Atualiza enquanto a campanha
+    // está ativa para alimentar o card "Agentes em campo".
+    const agentsQuery = useQuery({
+        queryKey: ["campaign-agents", campaignId],
+        queryFn: async () =>
+            (
+                await api.get<AgentsParticipationResponse>(
+                    `/campaigns/${encodeURIComponent(campaignId)}/agents`,
+                )
+            ).data,
+        enabled: Boolean(campaignId),
+        refetchInterval: (query) =>
+            query.state.data && campaignIsActive ? 4000 : false,
+    });
+    const agentsParticipation = agentsQuery.data?.agents ?? null;
+
+    // CVEs/exploits conhecidos (seção 0C). Consulta externa à NVD — lenta na
+    // primeira chamada; só dispara quando o usuário clica em "Gerar CVEs".
+    const cvesQuery = useQuery({
+        queryKey: ["campaign-cves", campaignId],
+        queryFn: async () =>
+            (
+                await api.get<CvesResponse>(
+                    `/campaigns/${encodeURIComponent(campaignId)}/cves`,
+                    { timeout: 60_000 },
+                )
+            ).data,
+        enabled: Boolean(campaignId) && campaignIsTerminal && showCves,
         staleTime: 5 * 60_000,
     });
 
@@ -174,13 +228,15 @@ export default function Campanha() {
             campaignId,
             moveNumber,
             decision,
+            actor = "operator",
         }: {
             campaignId: string;
             moveNumber: number;
             decision: "approve" | "deny";
+            actor?: string;
         }) =>
             api.post(
-                `/campaigns/${encodeURIComponent(campaignId)}/moves/${moveNumber}/${decision}?actor=operator`,
+                `/campaigns/${encodeURIComponent(campaignId)}/moves/${moveNumber}/${decision}?actor=${encodeURIComponent(actor)}`,
             ),
         onSuccess: (_response, variables) => {
             void queryClient.invalidateQueries({
@@ -246,18 +302,133 @@ export default function Campanha() {
         }
     }, [reportCampaign, queryClient]);
 
+    // Piloto automático: aprova automaticamente os lances pendentes que NÃO são
+    // de severidade "high". Os mais graves continuam aguardando o humano.
+    useEffect(() => {
+        if (!autoPilot || !campaign || !campaignIsActive) return;
+        const seen = autoApprovedRef.current;
+        for (const move of campaign.moves) {
+            if (move.approval !== "pending") continue;
+            if (move.severity === "high") continue; // os mais graves pedem humano
+            const key = `${campaign.id}:${move.move}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            decideMoveMutation.mutate(
+                {
+                    campaignId: campaign.id,
+                    moveNumber: move.move,
+                    decision: "approve",
+                    actor: "piloto-automatico",
+                },
+                {
+                    // 409 = o servidor já avançou o lance; ignoramos em silêncio.
+                    onError: () => undefined,
+                },
+            );
+        }
+    }, [autoPilot, campaign, campaignIsActive, decideMoveMutation]);
+
+    // Ao trocar de campanha, zera o controle de lances já auto-aprovados.
+    useEffect(() => {
+        autoApprovedRef.current = new Set();
+    }, [campaignId]);
+
+    // Rede de segurança contra dessincronização: se o /status aponta que há um
+    // lance aguardando aprovação mas ele ainda não apareceu em campaign.moves
+    // (um evento se perdeu numa rajada rápida), força um refetch do tabuleiro.
+    useEffect(() => {
+        if (!campaign || !campaignStatus || !campaignIsActive) return;
+        const pendingNums = new Set(
+            campaign.moves
+                .filter((m) => m.approval === "pending")
+                .map((m) => m.move),
+        );
+        const statusPending = campaignStatus.pending_approvals ?? [];
+        const awaiting =
+            campaignStatus.current_move?.stage === "awaiting_approval" ||
+            statusPending.length > 0;
+        const desync =
+            statusPending.some((p) => !pendingNums.has(p.move)) ||
+            (awaiting && pendingNums.size === 0);
+        if (!desync) return;
+        const now = Date.now();
+        if (now - lastReconcileRef.current < 1500) return;
+        lastReconcileRef.current = now;
+        void queryClient.invalidateQueries({
+            queryKey: ["campaign", campaignId],
+        });
+    }, [campaign, campaignStatus, campaignIsActive, campaignId, queryClient]);
+
+    // Limite de lances (melhor esforço): o agente joga a partida inteira no
+    // servidor e a API não tem parâmetro de "máximo de lances", então pedimos
+    // /stop assim que o lance-limite aparece. Em partidas muito rápidas o
+    // servidor pode avançar alguns lances antes do stop chegar.
+    useEffect(() => {
+        if (!campaign || !campaignIsActive) return;
+        const limit = moveLimits[campaign.id];
+        if (!limit) return;
+        if (stoppedForLimitRef.current.has(campaign.id)) return;
+        // Dispara assim que o número de lances planejados alcança o limite.
+        if (campaign.moves.length < limit) return;
+        stoppedForLimitRef.current.add(campaign.id);
+        stopCampaignMutation.mutate(campaign.id, {
+            onSuccess: () =>
+                setNotice(
+                    `Limite de ${limit} lances atingido — encerrando a campanha.`,
+                ),
+        });
+    }, [campaign, campaignIsActive, moveLimits, stopCampaignMutation]);
+
     const latestMove = campaign?.moves[campaign.moves.length - 1] || null;
+    const pendingHighCount =
+        campaign?.moves.filter(
+            (m) => m.approval === "pending" && m.severity === "high",
+        ).length ?? 0;
+    // Lances que REALMENTE precisam de um clique humano: com o piloto automático
+    // ligado, só os de severidade alta; sem ele, todos os pendentes.
+    const humanPendingMoves = campaign
+        ? campaign.moves
+              .filter(
+                  (m) =>
+                      m.approval === "pending" &&
+                      (!autoPilot || m.severity === "high"),
+              )
+              .sort((a, b) => a.move - b.move)
+        : [];
+    // 409 ("lance X nao esta aguardando aprovacao") é benigno: o servidor já
+    // avançou aquele lance. Não mostramos como erro.
+    const decideErrorRaw = decideMoveMutation.error;
+    const decideError =
+        decideErrorRaw &&
+        !(
+            axios.isAxiosError(decideErrorRaw) &&
+            decideErrorRaw.response?.status === 409
+        )
+            ? getApiErrorMessage(decideErrorRaw)
+            : "";
 
     function createCampaign(values: CampaignFormValues) {
         setError("");
         setNotice("");
         // Alvo travado: não enviamos `origin`; o servidor usa o locked_target.
-        createCampaignMutation.mutate({
-            config: {
-                authorized_by: values.authorizedBy,
-                authorized_at: new Date().toISOString(),
+        createCampaignMutation.mutate(
+            {
+                config: {
+                    authorized_by: values.authorizedBy,
+                    authorized_at: new Date().toISOString(),
+                },
             },
-        });
+            {
+                onSuccess: (created) => {
+                    if (values.moveLimit) {
+                        setMoveLimits((current) => ({
+                            ...current,
+                            [created.id]: values.moveLimit as number,
+                        }));
+                    }
+                },
+            },
+        );
     }
 
     function decideMove(moveNumber: number, decision: "approve" | "deny") {
@@ -274,6 +445,19 @@ export default function Campanha() {
                             ? `Lance ${moveNumber} aprovado.`
                             : `Lance ${moveNumber} negado.`,
                     ),
+                onError: (mutationError) => {
+                    // 409 = o servidor já avançou esse lance. Resincroniza em vez
+                    // de assustar o usuário com um erro.
+                    if (
+                        axios.isAxiosError(mutationError) &&
+                        mutationError.response?.status === 409
+                    ) {
+                        setNotice(`Lance ${moveNumber} já havia sido resolvido.`);
+                        void queryClient.invalidateQueries({
+                            queryKey: ["campaign", campaign.id],
+                        });
+                    }
+                },
                 onSettled: () => setPendingAction(""),
             },
         );
@@ -335,6 +519,28 @@ export default function Campanha() {
                                 {liveLabel}
                             </span>
                         )}
+                        {campaignIsActive && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                aria-pressed={autoPilot}
+                                onClick={() => setAutoPilot((value) => !value)}
+                                title="Aprova sozinho os lances menos graves; os de severidade alta continuam pedindo sua autorização."
+                                className={`rounded-xl ${
+                                    autoPilot
+                                        ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-200 hover:bg-emerald-400/15"
+                                        : "border-border/60 bg-card/50"
+                                }`}
+                            >
+                                <Zap
+                                    className={autoPilot ? "fill-emerald-300/40" : ""}
+                                />
+                                Piloto auto
+                                <span className="text-[10px] opacity-70">
+                                    {autoPilot ? "ON" : "OFF"}
+                                </span>
+                            </Button>
+                        )}
                         {campaigns.length > 0 && (
                             <Select
                                 value={campaignId || null}
@@ -388,11 +594,10 @@ export default function Campanha() {
                         animate={{ opacity: 1, y: 0, height: "auto" }}
                         exit={{ opacity: 0, y: -8, height: 0 }}
                         role={error ? "alert" : "status"}
-                        className={`flex items-start gap-2 overflow-hidden rounded-2xl border px-4 py-3 text-sm ${
-                            error
-                                ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
-                                : "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
-                        }`}
+                        className={`flex items-start gap-2 overflow-hidden rounded-2xl border px-4 py-3 text-sm ${error
+                            ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
+                            : "border-emerald-500/25 bg-emerald-500/10 text-emerald-200"
+                            }`}
                     >
                         {error ? (
                             <ShieldAlert className="mt-0.5 size-4 shrink-0" />
@@ -409,6 +614,36 @@ export default function Campanha() {
                         >
                             <X className="size-4 opacity-70 hover:opacity-100" />
                         </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {autoPilot && campaignIsActive && (
+                    <motion.div
+                        key="autopilot-banner"
+                        initial={{ opacity: 0, y: -8, height: 0 }}
+                        animate={{ opacity: 1, y: 0, height: "auto" }}
+                        exit={{ opacity: 0, y: -8, height: 0 }}
+                        role="status"
+                        className="flex items-start gap-2 overflow-hidden rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.07] px-4 py-3 text-sm text-emerald-100"
+                    >
+                        <Zap className="mt-0.5 size-4 shrink-0 fill-emerald-300/40 text-emerald-300" />
+                        <span className="flex-1">
+                            Piloto automático ligado: os lances de severidade baixa e
+                            média são aprovados sozinhos.{" "}
+                            {pendingHighCount > 0 ? (
+                                <strong className="font-semibold text-emerald-50">
+                                    {pendingHighCount}{" "}
+                                    {pendingHighCount === 1
+                                        ? "lance grave aguarda"
+                                        : "lances graves aguardam"}{" "}
+                                    sua autorização.
+                                </strong>
+                            ) : (
+                                "Os de severidade alta ainda pedem sua autorização."
+                            )}
+                        </span>
                     </motion.div>
                 )}
             </AnimatePresence>
@@ -485,8 +720,11 @@ export default function Campanha() {
                                             {campaignIsActive ? "Operando" : "Standby"}
                                         </span>
                                     </div>
-                                    <div className="mt-2 flex-1">
-                                        <AgentsConstellation campaign={campaign} />
+                                    <div className="mt-3 flex-1">
+                                        <AgentsField
+                                            campaign={campaign}
+                                            participation={agentsParticipation}
+                                        />
                                     </div>
                                     <CurrentFocus
                                         status={campaignStatus}
@@ -499,11 +737,19 @@ export default function Campanha() {
                         <motion.div variants={fadeUp} className="grid gap-3">
                             <ScorePanel campaign={campaign} reduce={Boolean(reduce)} />
                             <ProgressPanel
+                                campaign={campaign}
                                 status={campaignStatus}
                                 state={campaign.state}
+                                active={campaignIsActive}
                                 elapsed={campaignStatus?.elapsed_s ?? 0}
+                                moveLimit={moveLimits[campaign.id]}
+                                pendingMoves={humanPendingMoves}
+                                pendingAction={pendingAction}
+                                actionError={decideError}
+                                onDecide={(moveNumber, decision) =>
+                                    void decideMove(moveNumber, decision)
+                                }
                             />
-                            <AgentRoster campaign={campaign} />
                         </motion.div>
                     </motion.div>
 
@@ -512,19 +758,10 @@ export default function Campanha() {
                             campaign={campaign}
                             latestMove={latestMove}
                             active={campaignIsActive}
-                            pendingAction={pendingAction}
                             campaignError={
                                 campaignQuery.error
                                     ? getApiErrorMessage(campaignQuery.error)
                                     : ""
-                            }
-                            actionError={
-                                decideMoveMutation.error
-                                    ? getApiErrorMessage(decideMoveMutation.error)
-                                    : ""
-                            }
-                            onDecide={(moveNumber, decision) =>
-                                void decideMove(moveNumber, decision)
                             }
                             isStopping={pendingAction === "stop"}
                             stopError={
@@ -542,6 +779,9 @@ export default function Campanha() {
                             }
                             canOpenReport={campaignIsTerminal}
                             onOpenReport={() => setShowReport(true)}
+                            canGenerateCves={campaignIsTerminal}
+                            isGeneratingCves={showCves && cvesQuery.isFetching}
+                            onGenerateCves={() => setShowCves(true)}
                         />
                     </motion.div>
 
@@ -572,6 +812,38 @@ export default function Campanha() {
                                     <CampaignReport
                                         report={reportQuery.data}
                                         onClose={() => setShowReport(false)}
+                                    />
+                                )}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    <AnimatePresence>
+                        {campaignIsTerminal && showCves && (
+                            <motion.div
+                                key="cves"
+                                initial={{ opacity: 0, y: 12 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 12 }}
+                            >
+                                {cvesQuery.isError ? (
+                                    <CampaignCvesError
+                                        message={getApiErrorMessage(cvesQuery.error)}
+                                        onRetry={() => void cvesQuery.refetch()}
+                                    />
+                                ) : cvesQuery.isPending || !cvesQuery.data ? (
+                                    <Card className="border-border/60 bg-card/50">
+                                        <CardContent className="flex min-h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
+                                            <LoaderCircle className="size-5 animate-spin" />
+                                            <p className="text-sm">
+                                                Consultando base de vulnerabilidades (NVD)...
+                                            </p>
+                                        </CardContent>
+                                    </Card>
+                                ) : (
+                                    <CampaignCves
+                                        data={cvesQuery.data}
+                                        onClose={() => setShowCves(false)}
                                     />
                                 )}
                             </motion.div>
@@ -625,6 +897,23 @@ function CurrentFocus({
 
 /* ---------------------------------------------------------------- Score panel */
 
+const GRADE_META: {
+    grade: MoveGrade;
+    label: string;
+    bar: string;
+    text: string;
+}[] = [
+        { grade: "brilliant", label: "Brilhante", bar: "bg-cyan-400", text: "text-cyan-300" },
+        { grade: "great", label: "Ótimo", bar: "bg-blue-400", text: "text-blue-300" },
+        { grade: "best", label: "Melhor lance", bar: "bg-emerald-400", text: "text-emerald-300" },
+        { grade: "good", label: "Bom", bar: "bg-emerald-300", text: "text-emerald-200" },
+        { grade: "inaccuracy", label: "Imprecisão", bar: "bg-amber-400", text: "text-amber-300" },
+        { grade: "mistake", label: "Erro", bar: "bg-orange-400", text: "text-orange-300" },
+        { grade: "blunder", label: "Erro grave", bar: "bg-rose-500", text: "text-rose-300" },
+        { grade: "miss", label: "Não executado", bar: "bg-zinc-500", text: "text-zinc-400" },
+        { grade: "inconclusive", label: "Inconclusivo", bar: "bg-zinc-600", text: "text-zinc-400" },
+    ];
+
 function ScorePanel({
     campaign,
     reduce,
@@ -633,60 +922,97 @@ function ScorePanel({
     reduce: boolean;
 }) {
     const score = campaign.score;
-    const whitePct = score ? Math.min(100, Math.max(0, (score.eval_bar + 100) / 2)) : 50;
     const counts = score?.counts ?? {};
+    const present = GRADE_META.filter((meta) => (counts[meta.grade] || 0) > 0);
+    const totalGraded = present.reduce(
+        (sum, meta) => sum + (counts[meta.grade] || 0),
+        0,
+    );
+    const evalLabel = !score
+        ? "Sem lances avaliados"
+        : score.eval_bar >= 40
+            ? "Alvo sólido"
+            : score.eval_bar >= 0
+                ? "Equilibrado"
+                : score.eval_bar >= -40
+                    ? "Alvo frágil"
+                    : "Alvo muito frágil";
 
     return (
-        <Card className="border-border/60 bg-card/50 backdrop-blur-sm">
-            <CardContent className="flex items-stretch gap-4 p-5">
-                {/* barra de avaliação vertical estilo Chess.com */}
-                <div
-                    className="relative w-3 shrink-0 overflow-hidden rounded-full bg-zinc-900 ring-1 ring-border/60"
-                    title="Avaliação da partida"
-                >
-                    <motion.div
-                        className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-zinc-200 to-white"
-                        initial={{ height: "50%" }}
-                        animate={{ height: `${whitePct}%` }}
-                        transition={
-                            reduce ? { duration: 0 } : { type: "spring", stiffness: 120, damping: 20 }
-                        }
-                    />
-                </div>
-                <div className="min-w-0 flex-1">
+        <Card className="h-full border-border/60 bg-card/50 backdrop-blur-sm">
+            <CardContent className="flex h-full items-stretch gap-4 p-5">
+
+                <div className="flex min-w-0 flex-1 flex-col">
                     <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                         <Gauge className="size-4" />
-                        Avaliação da partida
+                        Avaliação da penteada
                     </p>
                     <div className="mt-2 flex items-end gap-3">
                         <span className="text-4xl font-bold tabular-nums text-foreground">
                             {score ? score.accuracy.toFixed(1) : "—"}
                         </span>
                         <span className="pb-1 text-xs text-muted-foreground">Accuracy</span>
-                        <span className="ml-auto pb-1 font-mono text-sm text-muted-foreground">
-                            {score
-                                ? `${score.eval_bar > 0 ? "+" : ""}${score.eval_bar.toFixed(0)}`
-                                : "—"}
+                        <span className="ml-auto flex flex-col items-end pb-0.5">
+                            <span className="font-mono text-sm text-muted-foreground">
+                                {score
+                                    ? `${score.eval_bar > 0 ? "+" : ""}${score.eval_bar.toFixed(0)}`
+                                    : "—"}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/80">
+                                {evalLabel}
+                            </span>
                         </span>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                        {(
-                            [
-                                ["blunder", "erros graves", "text-rose-300"],
-                                ["mistake", "erros", "text-orange-300"],
-                                ["inaccuracy", "imprecisões", "text-amber-300"],
-                                ["best", "ótimos", "text-emerald-300"],
-                            ] as const
-                        ).map(([grade, label, color]) => (
-                            <span
-                                key={grade}
-                                className="rounded-md border border-border/60 bg-muted/20 px-2 py-1 text-[10px] text-muted-foreground"
-                            >
-                                <span className={`font-semibold ${color}`}>
-                                    {counts[grade] || 0}
-                                </span>{" "}
-                                {label}
+
+                    {/* distribuição dos lances estilo "placar" */}
+                    <div className="mt-4">
+                        <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
+                            <span>Distribuição dos lances</span>
+                            <span className="tabular-nums">
+                                {totalGraded} avaliado{totalGraded === 1 ? "" : "s"}
                             </span>
+                        </div>
+                        <div className="mt-1.5 flex h-2.5 overflow-hidden rounded-full bg-muted/40">
+                            {present.map((meta) => {
+                                const value = counts[meta.grade] || 0;
+                                const pct = totalGraded ? (value / totalGraded) * 100 : 0;
+                                return (
+                                    <motion.div
+                                        key={meta.grade}
+                                        className={meta.bar}
+                                        title={`${meta.label}: ${value}`}
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${pct}%` }}
+                                        transition={
+                                            reduce
+                                                ? { duration: 0 }
+                                                : { type: "spring", stiffness: 120, damping: 22 }
+                                        }
+                                    />
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                        {(present.length > 0
+                            ? present
+                            : GRADE_META.filter((m) =>
+                                ["best", "inaccuracy", "mistake", "blunder"].includes(
+                                    m.grade,
+                                ),
+                            )
+                        ).map((meta) => (
+                            <div
+                                key={meta.grade}
+                                className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                            >
+                                <span className={`size-2 shrink-0 rounded-full ${meta.bar}`} />
+                                <span className={`font-semibold tabular-nums ${meta.text}`}>
+                                    {counts[meta.grade] || 0}
+                                </span>
+                                <span className="truncate">{meta.label}</span>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -698,16 +1024,40 @@ function ScorePanel({
 /* -------------------------------------------------------------- Progress panel */
 
 function ProgressPanel({
+    campaign,
     status,
     state,
+    active,
     elapsed,
+    moveLimit,
+    pendingMoves,
+    pendingAction,
+    actionError,
+    onDecide,
 }: {
+    campaign: Campaign;
     status: CampaignStatus | null;
     state: Campaign["state"];
+    active: boolean;
     elapsed: number;
+    moveLimit?: number;
+    pendingMoves: CampaignMove[];
+    pendingAction: string;
+    actionError: string;
+    onDecide: (moveNumber: number, decision: "approve" | "deny") => void;
 }) {
-    const progress = status?.progress ?? { played: 0, total: 0, percent: 0 };
-    const pending = status?.pending_approvals.length ?? 0;
+    const rawProgress = status?.progress ?? { played: 0, total: 0, percent: 0 };
+    // Com limite de lances, a barra passa a refletir o alvo escolhido.
+    const progress = moveLimit
+        ? {
+              played: rawProgress.played,
+              total: moveLimit,
+              percent: Math.min(
+                  100,
+                  Math.round((rawProgress.played / moveLimit) * 100),
+              ),
+          }
+        : rawProgress;
 
     return (
         <Card className="border-border/60 bg-card/50 backdrop-blur-sm">
@@ -717,8 +1067,15 @@ function ProgressPanel({
                         <Radio className="size-4" />
                         Progresso
                     </p>
-                    <span className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
-                        {stateLabel(state)}
+                    <span className="flex items-center gap-1.5">
+                        {moveLimit && (
+                            <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+                                limite {moveLimit}
+                            </span>
+                        )}
+                        <span className="rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
+                            {stateLabel(state)}
+                        </span>
                     </span>
                 </div>
                 <div className="mt-3 flex items-center justify-between text-sm text-foreground">
@@ -737,14 +1094,207 @@ function ProgressPanel({
                         transition={{ type: "spring", stiffness: 120, damping: 20 }}
                     />
                 </div>
-                {pending > 0 && (
-                    <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-300">
-                        <ShieldAlert className="size-3.5" />
-                        {pending} {pending === 1 ? "lance aguarda" : "lances aguardam"} aprovação
-                    </p>
-                )}
+                <ApprovalPrompt
+                    pendingMoves={pendingMoves}
+                    pendingAction={pendingAction}
+                    actionError={actionError}
+                    onDecide={onDecide}
+                />
+
+                <LiveAgent campaign={campaign} status={status} active={active} />
             </CardContent>
         </Card>
+    );
+}
+
+/* ---------------------------------------------------------- approval prompt */
+
+function ApprovalPrompt({
+    pendingMoves,
+    pendingAction,
+    actionError,
+    onDecide,
+}: {
+    pendingMoves: CampaignMove[];
+    pendingAction: string;
+    actionError: string;
+    onDecide: (moveNumber: number, decision: "approve" | "deny") => void;
+}) {
+    const head = pendingMoves[0] ?? null;
+    const headNumber = head?.move ?? null;
+    const queued = Math.max(0, pendingMoves.length - 1);
+    const notified = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (headNumber === null) {
+            notified.current = null;
+            return;
+        }
+        if (notified.current === headNumber) return;
+        notified.current = headNumber;
+        playApprovalNotification();
+    }, [headNumber]);
+
+    return (
+        <AnimatePresence initial={false}>
+            {head && (
+                <motion.div
+                    key="approval"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                >
+                    <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                            <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-amber-300">
+                                <LockKeyhole className="size-3.5" />
+                                Precisa da sua autorização
+                            </p>
+                            {queued > 0 && (
+                                <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-200">
+                                    +{queued} na fila
+                                </span>
+                            )}
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-semibold text-foreground">
+                                {head.title}
+                            </span>
+                            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                                #{String(head.move).padStart(2, "0")} · {head.test_id}
+                            </span>
+                        </div>
+                        {head.plan?.hypothesis && (
+                            <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
+                                {head.plan.hypothesis}
+                            </p>
+                        )}
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={Boolean(pendingAction)}
+                                onClick={() => onDecide(head.move, "deny")}
+                                className="border-border/60 bg-transparent text-foreground/80 hover:bg-foreground/5"
+                            >
+                                {pendingAction === `deny-${head.move}` ? (
+                                    <LoaderCircle className="animate-spin" />
+                                ) : (
+                                    <X />
+                                )}
+                                Negar
+                            </Button>
+                            <Button
+                                size="sm"
+                                disabled={Boolean(pendingAction)}
+                                onClick={() => onDecide(head.move, "approve")}
+                                className="bg-primary text-primary-foreground hover:bg-primary/90"
+                            >
+                                {pendingAction === `approve-${head.move}` ? (
+                                    <LoaderCircle className="animate-spin" />
+                                ) : (
+                                    <ArrowRight />
+                                )}
+                                Aprovar
+                            </Button>
+                        </div>
+                        {actionError && (
+                            <p role="alert" className="mt-2 text-[11px] text-rose-300">
+                                {actionError}
+                            </p>
+                        )}
+                    </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
+    );
+}
+
+/* ------------------------------------------------------------- live agent */
+
+function LiveAgent({
+    campaign,
+    status,
+    active,
+}: {
+    campaign: Campaign;
+    status: CampaignStatus | null;
+    active: boolean;
+}) {
+    const current = status?.current_move ?? null;
+    const currentMove = current
+        ? campaign.moves.find((m) => m.move === current.move) ?? null
+        : null;
+    const agent = currentMove ? agentForMove(currentMove) : null;
+    const accent = agent ? ACCENT[agent.accent] : null;
+    const Icon = agent?.icon;
+
+    const doingText = !active
+        ? "Partida encerrada — nenhum agente ativo."
+        : current
+            ? current.stage === "awaiting_approval"
+                ? `Aguardando aprovação para: ${current.title}`
+                : currentMove?.plan?.action || `Jogando: ${current.title}`
+            : "Analisando o tabuleiro para o próximo lance...";
+
+    return (
+        <div className="mt-4 border-t border-border/50 pt-3">
+            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span className="relative flex size-2">
+                    {active && (
+                        <motion.span
+                            className="absolute inline-flex size-full rounded-full bg-emerald-400/70"
+                            animate={{ scale: [1, 2.2], opacity: [0.6, 0] }}
+                            transition={{ duration: 1.5, repeat: Infinity, ease: "easeOut" }}
+                        />
+                    )}
+                    <span
+                        className={`relative inline-flex size-2 rounded-full ${active ? "bg-emerald-400" : "bg-muted-foreground/40"
+                            }`}
+                    />
+                </span>
+                Agente ao vivo
+            </p>
+
+            <div
+                className={`flex items-start gap-2.5 rounded-xl border p-2.5 ${agent && active && accent
+                    ? `${accent.border} bg-background/40`
+                    : "border-border/50 bg-background/30"
+                    }`}
+            >
+                <span
+                    className={`grid size-9 shrink-0 place-items-center rounded-lg border ${agent && active && accent
+                        ? `${accent.border} ${accent.soft}`
+                        : "border-border/60 bg-muted/30"
+                        }`}
+                >
+                    {Icon ? (
+                        <Icon
+                            className={`size-[18px] ${active && accent ? accent.text : "text-muted-foreground"
+                                }`}
+                        />
+                    ) : (
+                        <Activity className="size-[18px] text-muted-foreground" />
+                    )}
+                </span>
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-semibold text-foreground">
+                            {agent && active ? agent.name : "—"}
+                        </span>
+                        {current && active && (
+                            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                                {current.test_id}
+                            </span>
+                        )}
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
+                        {doingText}
+                    </p>
+                </div>
+            </div>
+        </div>
     );
 }
 
