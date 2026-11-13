@@ -13,11 +13,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import admin_settings
 from app.api import router
+from app.api.admin_routes import router as admin_router
+from app.api.auth_routes import router as auth_router
 from app.api.info import router as info_router
 from app.api.timeline import router as timeline_router
 from app.api.ws import router as ws_router
 from app.api.context import AppContext
+from app.auth import ensure_seed_admin
 from app.config import cors_origins, load_settings
 from app.cve.nvd_client import NvdClient
 from app.db import Database
@@ -71,6 +75,9 @@ def build_context() -> AppContext:
 async def lifespan(app: FastAPI):
     ctx = build_context()
     app.state.ctx = ctx
+    # Carrega o escopo gerido pelo admin e garante um admin inicial.
+    admin_settings.load(ctx.db.all_settings_sync())
+    await ensure_seed_admin(ctx.db)
     try:
         yield
     finally:
@@ -78,12 +85,12 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Pentest Chess — Plataforma", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="PENT.IA — Plataforma", version="0.1.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins(),  # so a tela (Vite); ajuste CORS_ORIGINS no .env
-        allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],
+        allow_methods=["GET", "POST", "PUT"],
+        allow_headers=["Content-Type", "Authorization"],
     )
 
     @app.middleware("http")
@@ -98,6 +105,8 @@ def create_app() -> FastAPI:
     app.include_router(ws_router)
     app.include_router(timeline_router)
     app.include_router(info_router)
+    app.include_router(auth_router)
+    app.include_router(admin_router)
 
     @app.get("/health")
     async def health() -> dict[str, object]:

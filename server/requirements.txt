@@ -5,6 +5,8 @@ pydantic>=2
 httpx
 boto3
 python-dotenv
+pyjwt
+bcrypt
 pytest
 pytest-asyncio
 reportlab

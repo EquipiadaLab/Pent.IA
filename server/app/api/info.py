@@ -1,9 +1,9 @@
 """Endpoints de status e informacao (caminhos NOVOS, aditivos).
 
 - GET /status ...................... saude detalhada (API, banco, motor, IA)
-- GET /catalog ..................... testes que o agente pode jogar (o "tabuleiro")
+- GET /catalog ..................... testes que o agente pode jogar (o "bancada")
 - GET /scope ....................... regras de engajamento impostas pelo servidor
-- GET /campaigns/{id}/status ....... progresso resumido de uma partida
+- GET /campaigns/{id}/status ....... progresso resumido de uma penteada
 
 Nada aqui expoe segredo: sem credenciais, sem conta AWS, sem mensagens de erro internas.
 """
@@ -20,16 +20,16 @@ from pydantic import BaseModel, Field
 
 from app.api.context import AppContext, get_ctx
 from app.api.routes import _MAX_RPS, _MAX_TIMEOUT_S, _MAX_TOTAL, _SAFE_METHODS, _SAFE_PROFILES
-from app.authorization import _block_private, accepts_any_target, authorized_origins, default_target
-from app.cve.correlation import correlate_campaign
-from app.cve.models import CveMatch
 from app.authorization import (
     _block_private,
     accepts_any_target,
     authorized_origins,
+    blocked_scopes,
     default_target,
     locked_target,
 )
+from app.cve.correlation import correlate_campaign
+from app.cve.models import CveMatch
 from app.engine.scope import normalize_origin
 from app.engine.checks import CATALOG
 from app.models import Approval, CampaignState, Phase, Profile, Score, Severity, Status
@@ -89,6 +89,9 @@ class ScopeResponse(BaseModel):
     accepts_any_target: bool = Field(description="True = modo aberto (qualquer URL publica); False = travado/lista")
     default_target: str | None = Field(description="Alvo usado quando o front nao envia origin (modo aberto)")
     blocks_private_targets: bool = Field(description="Rede interna/privada sempre bloqueada (anti-SSRF)")
+    blocked_scopes: list[str] = Field(
+        default_factory=list, description="Hosts/origens bloqueados pelo admin (recusados sempre)."
+    )
     allowed_methods: list[str]
     allowed_profiles: list[Profile]
     blocked_profiles: list[Profile]
@@ -237,6 +240,7 @@ async def scope() -> ScopeResponse:
         accepts_any_target=open_mode,
         default_target=default_target() if open_mode else None,
         blocks_private_targets=_block_private(),
+        blocked_scopes=blocked_scopes(),
         allowed_methods=list(_SAFE_METHODS),
         allowed_profiles=sorted(_SAFE_PROFILES, key=lambda p: p.value),
         blocked_profiles=[Profile.INTRUSIVE],
@@ -258,6 +262,8 @@ async def campaign_status(campaign_id: str, ctx: AppContext = Depends(get_ctx)) 
     if c is None:
         raise HTTPException(status_code=404, detail="Campanha nao encontrada.")
     total = len(c.config.only_tests) if c.config.only_tests is not None else len(CATALOG)
+    if c.config.max_moves is not None:
+        total = min(total, c.config.max_moves)
     played = sum(1 for m in c.moves if m.status is not None or m.approval is Approval.DENIED)
     pending = [m for m in c.moves if m.approval is Approval.PENDING]
     open_moves = [m for m in c.moves if m.status is None and m.approval is not Approval.DENIED]

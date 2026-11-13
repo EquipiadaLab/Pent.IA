@@ -1,4 +1,4 @@
-# Backend — Pentest Chess
+# Backend — PENT.IA
 
 ## Trilhos e donos de pasta
 

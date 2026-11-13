@@ -1,7 +1,11 @@
+import { useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { LoaderCircle } from "lucide-react";
 import { AmbientBackground } from "./components/layout/ambient-background";
 import { MobileNav, Sidebar } from "./components/layout/sidebar";
 import { MobileTopbar } from "./components/layout/topbar";
+import { Login } from "./components/auth/login";
+import { useAuth } from "./hooks/use-auth";
 import { useHashRoute } from "./hooks/use-hash-route";
 import { normalizeHash } from "./data/nav";
 import { pageTransition } from "./lib/motion";
@@ -31,6 +35,30 @@ function renderPage(hash: string) {
 }
 
 export function App() {
+  const status = useAuth((s) => s.status);
+  const bootstrap = useAuth((s) => s.bootstrap);
+
+  useEffect(() => {
+    void bootstrap();
+  }, [bootstrap]);
+
+  if (status === "loading") {
+    return (
+      <div className="relative flex min-h-svh items-center justify-center text-muted-foreground">
+        <AmbientBackground />
+        <LoaderCircle className="size-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (status === "anon") {
+    return <Login />;
+  }
+
+  return <Dashboard />;
+}
+
+function Dashboard() {
   const [hash, navigate] = useHashRoute();
 
   return (

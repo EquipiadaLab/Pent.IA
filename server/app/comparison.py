@@ -1,4 +1,4 @@
-"""Validacao continua: compara a partida com a anterior do mesmo alvo."""
+"""Validacao continua: compara a penteada com a anterior do mesmo alvo."""
 
 from __future__ import annotations
 

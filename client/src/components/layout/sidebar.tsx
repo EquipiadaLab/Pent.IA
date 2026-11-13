@@ -1,7 +1,8 @@
 import { motion } from "motion/react";
-import { Activity, Moon, Shield, Sun } from "lucide-react";
+import { Activity, LogOut, Moon, Shield, ShieldCheck, Sun } from "lucide-react";
 import { NAV_ITEMS, normalizeHash } from "@/data/nav";
 import { useSystemStatus, type ComponentState } from "@/hooks/use-system-status";
+import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/components/theme-provider";
 import { fadeUp, staggerContainer } from "@/lib/motion";
 
@@ -128,6 +129,38 @@ function SystemHealth() {
   );
 }
 
+function UserFooter() {
+  const user = useAuth((s) => s.user);
+  const logout = useAuth((s) => s.logout);
+  if (!user) return null;
+  const isAdmin = user.role === "admin";
+  return (
+    <div className="flex items-center gap-2.5 rounded-2xl border border-border/60 bg-card/40 p-2.5 backdrop-blur-sm">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-primary/20 bg-primary/10 text-[11px] font-bold uppercase text-primary">
+        {user.username.slice(0, 2)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[12px] font-semibold text-foreground">
+          {user.username}
+        </p>
+        <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          {isAdmin && <ShieldCheck className="size-3 text-primary" />}
+          {isAdmin ? "Administrador" : "Operador"}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={logout}
+        aria-label="Sair"
+        title="Sair"
+        className="grid size-8 shrink-0 place-items-center rounded-lg border border-border/60 text-muted-foreground outline-none transition-colors hover:border-rose-400/40 hover:text-rose-300 focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        <LogOut className="size-4" />
+      </button>
+    </div>
+  );
+}
+
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const isDark = theme === "dark" || theme === "system";
@@ -167,6 +200,7 @@ export function Sidebar({ current, onNavigate }: SidebarProps) {
       </motion.nav>
       <div className="flex flex-col gap-2">
         <SystemHealth />
+        <UserFooter />
         <ThemeToggle />
       </div>
     </aside>

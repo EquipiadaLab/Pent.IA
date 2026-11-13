@@ -47,7 +47,7 @@ export function CampaignReport({ report, onClose }: CampaignReportProps) {
       <CardHeader className="flex grid-cols-[1fr_auto] items-center border-b border-white/[0.07] pb-4">
         <div>
           <CardTitle className="text-sm text-zinc-100">
-            Game Review · relatório da campanha
+            Revisão da Penteada · relatório da campanha
           </CardTitle>
           <p className="mt-1 text-xs text-zinc-500">
             Resumo executivo, riscos e trilha de auditoria retornados pela API.
@@ -127,7 +127,7 @@ export function CampaignReport({ report, onClose }: CampaignReportProps) {
         {comparison && (
           <div className="mt-5 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
             <p className="text-[10px] uppercase tracking-wider text-zinc-500">
-              Comparação com a partida anterior
+              Comparação com a penteada anterior
               {comparison.accuracy_delta !== null && (
                 <span
                   className={`ml-2 font-mono ${comparison.accuracy_delta >= 0 ? "text-emerald-300" : "text-rose-300"}`}

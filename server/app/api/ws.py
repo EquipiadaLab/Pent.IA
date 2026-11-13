@@ -1,4 +1,4 @@
-"""WebSocket da partida ao vivo: ``/campaigns/{id}/ws?since=N``.
+"""WebSocket da penteada ao vivo: ``/campaigns/{id}/ws?since=N``.
 
 Caminho NOVO (aditivo): o polling ``GET /events?since=N`` continua valendo.
 Cada mensagem enviada e um ``Event`` com EXATAMENTE o mesmo JSON do polling.
@@ -34,7 +34,7 @@ IDLE_CHECK_S = 1.0  # rede de seguranca: rele o banco mesmo sem aviso
 _FINAL = {CampaignState.FINISHED, CampaignState.STOPPED, CampaignState.FAILED}
 
 # Codigos de fechamento (o front le em event.code)
-CLOSE_DONE = 1000  # partida terminou
+CLOSE_DONE = 1000  # penteada terminou
 CLOSE_POLICY = 1008  # origem nao autorizada
 CLOSE_BUSY = 1013  # muitas conexoes; tente de novo / use polling
 CLOSE_NOT_FOUND = 4404  # campanha nao existe

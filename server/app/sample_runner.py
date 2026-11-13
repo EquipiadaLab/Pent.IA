@@ -2,7 +2,7 @@
 
 NAO e o motor. Vive fora de ``app/engine/`` (que e do Trilho A). Serve para:
 - testar a API/sink ponta a ponta sem depender do motor real;
-- alimentar o frontend com uma partida de exemplo para desenhar a UI.
+- alimentar o frontend com uma penteada de exemplo para desenhar a UI.
 
 Quando ``app.engine.runner.run_campaign`` existir, a aplicacao usa o real;
 caso contrario cai neste fake (ver ``app/main.py``). A assinatura segue o
@@ -129,7 +129,7 @@ def _score(moves: list[Move]) -> Score:
 async def run_campaign(
     campaign_id: str, config: CampaignConfig, sink: EventSink
 ) -> Campaign:
-    """Emite uma partida de exemplo respeitando parada e aprovacao."""
+    """Emite uma penteada de exemplo respeitando parada e aprovacao."""
     await sink.emit(
         Event(campaign_id=campaign_id, type=EventType.CAMPAIGN_STARTED, at=_now())
     )

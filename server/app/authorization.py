@@ -29,6 +29,7 @@ import os
 import socket
 from urllib.parse import urlsplit
 
+from app import admin_settings
 from app.engine.scope import normalize_origin
 
 _DEFAULT_TARGET_FALLBACK = "https://3.migbot.com.br"
@@ -56,8 +57,34 @@ def locked_target() -> str | None:
 
 
 def authorized_origins() -> set[str]:
+    """Alvos autorizados: uniao do ``.env`` (AUTHORIZED_TARGETS) com os que o
+    admin cadastrou pela tela (``admin_settings``)."""
     raw = os.getenv("AUTHORIZED_TARGETS", "")
-    return {o for o in (normalize_origin(x) for x in raw.split(",") if x.strip()) if o}
+    from_env = (normalize_origin(x) for x in raw.split(",") if x.strip())
+    from_admin = (normalize_origin(x) for x in admin_settings.authorized_targets())
+    return {o for o in (*from_env, *from_admin) if o}
+
+
+def blocked_scopes() -> list[str]:
+    """Hosts/origens que o admin bloqueou (recusados em qualquer modo)."""
+    return admin_settings.blocked_scopes()
+
+
+def _is_blocked_scope(url: str) -> str | None:
+    """Motivo do bloqueio se o alvo casar com um escopo bloqueado pelo admin."""
+    origin = normalize_origin(url)
+    host = (urlsplit(url).hostname or "").lower()
+    for raw in blocked_scopes():
+        entry = raw.strip().lower()
+        if not entry:
+            continue
+        entry_origin = normalize_origin(raw)
+        entry_host = (urlsplit(raw if "://" in raw else f"//{raw}").hostname or entry).lower()
+        if entry_origin and origin and entry_origin == origin:
+            return f"Alvo {origin} esta em um escopo bloqueado pelo admin."
+        if host and entry_host and (host == entry_host or host.endswith("." + entry_host)):
+            return f"Host {host} esta em um escopo bloqueado pelo admin."
+    return None
 
 
 def accepts_any_target() -> bool:
@@ -112,6 +139,11 @@ def authorization_error(url: str) -> str | None:
     origin = normalize_origin(url)
     if origin is None:
         return "URL invalida (use http:// ou https:// com host valido)."
+
+    # Escopos bloqueados pelo admin valem em QUALQUER modo (acima do resto).
+    blocked = _is_blocked_scope(url)
+    if blocked:
+        return blocked
 
     locked = locked_target()
     if locked:  # trava mais forte: so o alvo travado passa

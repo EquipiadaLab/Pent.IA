@@ -29,7 +29,7 @@ import httpx
 logger = logging.getLogger("pentest_chess.attack_mitre")
 
 # "enterprise-attack" cobre tecnicas contra redes corporativas/web, que e o
-# dominio relevante para o Pentest Chess (web app). Os outros dominios do
+# dominio relevante para o PENT.IA (web app). Os outros dominios do
 # ATT&CK (ICS, mobile) nao se aplicam ao MVP.
 DEFAULT_SOURCE_URL = (
     "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/"

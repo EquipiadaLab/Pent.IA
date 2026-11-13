@@ -1,4 +1,4 @@
-"""Mapa fechado: Reconnaissance -> testes web que o Pentest Chess suporta.
+"""Mapa fechado: Reconnaissance -> testes web que o PENT.IA suporta.
 
 MITRE ATT&CK e um catalogo de comportamento adversario; ele nao entrega
 comandos prontos de pentest web. Esta tabela e a camada de traducao segura:

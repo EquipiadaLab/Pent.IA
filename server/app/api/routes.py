@@ -7,7 +7,7 @@
 - GET  /campaigns/{id}/events .. eventos (incremental via ?since=)
 - POST /campaigns/{id}/stop .... parada de emergencia
 - POST /campaigns/{id}/moves/{move}/approve|deny ... fila de aprovacao
-- GET  /campaigns/{id}/report .. Game Review (JSON)
+- GET  /campaigns/{id}/report .. Revisao da Penteada (JSON)
 - GET  /campaigns/{id}/report/export?format=md|pdf
 """
 
@@ -47,7 +47,7 @@ def _now() -> datetime:
 
 class CreateCampaignRequest(BaseModel):
     config: CampaignConfig
-    # Revalidacao: id de uma partida anterior do MESMO alvo; joga so o que falhou nela.
+    # Revalidacao: id de uma penteada anterior do MESMO alvo; joga so o que falhou nela.
     revalidate_from: str | None = None
 
 
@@ -89,6 +89,15 @@ _SAFE_PROFILES = {Profile.PASSIVE, Profile.ACTIVE_LIGHT}
 _MAX_RPS = 5.0
 _MAX_TOTAL = 500
 _MAX_TIMEOUT_S = 30.0
+# Teto de lances por campanha (a tela pede 3..25; o servidor so garante o teto).
+_MAX_MOVES_CAP = 50
+
+
+def _clamp_max_moves(value: int | None) -> int | None:
+    """None = sem limite. Caso contrario, prende entre 1 e o teto do servidor."""
+    if value is None:
+        return None
+    return min(max(int(value), 1), _MAX_MOVES_CAP)
 
 
 def _enforce_server_limits(config: CampaignConfig) -> CampaignConfig:
@@ -101,6 +110,7 @@ def _enforce_server_limits(config: CampaignConfig) -> CampaignConfig:
             "max_requests_per_second": min(max(config.max_requests_per_second, 0.1), _MAX_RPS),
             "max_total_requests": min(max(config.max_total_requests, 1), _MAX_TOTAL),
             "request_timeout_s": min(max(config.request_timeout_s, 1.0), _MAX_TIMEOUT_S),
+            "max_moves": _clamp_max_moves(config.max_moves),
             "authorized_at": config.authorized_at or _now(),
             "only_tests": None,  # so o servidor define (via revalidate_from)
         }
@@ -110,12 +120,12 @@ def _enforce_server_limits(config: CampaignConfig) -> CampaignConfig:
 async def _revalidation_tests(previous_id: str, config: CampaignConfig, ctx: AppContext) -> list[str]:
     previous = await ctx.db.get_campaign(previous_id)
     if previous is None:
-        raise HTTPException(status_code=404, detail="Partida anterior nao encontrada.")
+        raise HTTPException(status_code=404, detail="Penteada anterior nao encontrada.")
     if normalize_origin(previous.config.origin) != normalize_origin(config.origin):
-        raise HTTPException(status_code=422, detail="A revalidacao precisa ser no mesmo alvo da partida anterior.")
+        raise HTTPException(status_code=422, detail="A revalidacao precisa ser no mesmo alvo da penteada anterior.")
     tests = sorted(failing(previous))
     if not tests:
-        raise HTTPException(status_code=409, detail="A partida anterior nao tem achados para revalidar.")
+        raise HTTPException(status_code=409, detail="A penteada anterior nao tem achados para revalidar.")
     return tests
 
 

@@ -80,10 +80,6 @@ export default function Campanha() {
     const [autoPilot, setAutoPilot] = useState(false);
     const autoApprovedRef = useRef<Set<string>>(new Set());
     const lastReconcileRef = useRef(0);
-    // Limite de lances por campanha (escolhido no formulário). A campanha é
-    // encerrada automaticamente ao atingir esse número.
-    const [moveLimits, setMoveLimits] = useState<Record<string, number>>({});
-    const stoppedForLimitRef = useRef<Set<string>>(new Set());
     const [webSocketState, setWebSocketState] =
         useState<CampaignWebSocketState>({ status: "idle", message: "" });
 
@@ -159,7 +155,7 @@ export default function Campanha() {
         campaign && !ACTIVE_STATES.includes(campaign.state),
     );
 
-    // Game Review (item 7): a primeira chamada ao /report pode levar ~20-30 s (IA).
+    // Revisão da Penteada (item 7): a primeira chamada ao /report pode levar ~20-30 s (IA).
     const reportQuery = useQuery({
         queryKey: ["campaign-report", campaignId],
         queryFn: async () =>
@@ -294,7 +290,7 @@ export default function Campanha() {
         });
     }, [queryClient, campaignId]);
 
-    // Após o /report, os lances ganham ai_explanation: propaga para o tabuleiro.
+    // Após o /report, os lances ganham ai_explanation: propaga para os lances.
     const reportCampaign = reportQuery.data?.campaign;
     useEffect(() => {
         if (reportCampaign) {
@@ -335,7 +331,7 @@ export default function Campanha() {
 
     // Rede de segurança contra dessincronização: se o /status aponta que há um
     // lance aguardando aprovação mas ele ainda não apareceu em campaign.moves
-    // (um evento se perdeu numa rajada rápida), força um refetch do tabuleiro.
+    // (um evento se perdeu numa rajada rápida), força um refetch dos lances.
     useEffect(() => {
         if (!campaign || !campaignStatus || !campaignIsActive) return;
         const pendingNums = new Set(
@@ -358,26 +354,6 @@ export default function Campanha() {
             queryKey: ["campaign", campaignId],
         });
     }, [campaign, campaignStatus, campaignIsActive, campaignId, queryClient]);
-
-    // Limite de lances (melhor esforço): o agente joga a partida inteira no
-    // servidor e a API não tem parâmetro de "máximo de lances", então pedimos
-    // /stop assim que o lance-limite aparece. Em partidas muito rápidas o
-    // servidor pode avançar alguns lances antes do stop chegar.
-    useEffect(() => {
-        if (!campaign || !campaignIsActive) return;
-        const limit = moveLimits[campaign.id];
-        if (!limit) return;
-        if (stoppedForLimitRef.current.has(campaign.id)) return;
-        // Dispara assim que o número de lances planejados alcança o limite.
-        if (campaign.moves.length < limit) return;
-        stoppedForLimitRef.current.add(campaign.id);
-        stopCampaignMutation.mutate(campaign.id, {
-            onSuccess: () =>
-                setNotice(
-                    `Limite de ${limit} lances atingido — encerrando a campanha.`,
-                ),
-        });
-    }, [campaign, campaignIsActive, moveLimits, stopCampaignMutation]);
 
     const latestMove = campaign?.moves[campaign.moves.length - 1] || null;
     const pendingHighCount =
@@ -411,24 +387,14 @@ export default function Campanha() {
         setError("");
         setNotice("");
         // Alvo travado: não enviamos `origin`; o servidor usa o locked_target.
-        createCampaignMutation.mutate(
-            {
-                config: {
-                    authorized_by: values.authorizedBy,
-                    authorized_at: new Date().toISOString(),
-                },
+        // O limite de lances agora é imposto pelo servidor (config.max_moves).
+        createCampaignMutation.mutate({
+            config: {
+                authorized_by: values.authorizedBy,
+                authorized_at: new Date().toISOString(),
+                max_moves: values.moveLimit ?? null,
             },
-            {
-                onSuccess: (created) => {
-                    if (values.moveLimit) {
-                        setMoveLimits((current) => ({
-                            ...current,
-                            [created.id]: values.moveLimit as number,
-                        }));
-                    }
-                },
-            },
-        );
+        });
     }
 
     function decideMove(moveNumber: number, decision: "approve" | "deny") {
@@ -742,7 +708,7 @@ export default function Campanha() {
                                 state={campaign.state}
                                 active={campaignIsActive}
                                 elapsed={campaignStatus?.elapsed_s ?? 0}
-                                moveLimit={moveLimits[campaign.id]}
+                                moveLimit={campaign.config.max_moves ?? undefined}
                                 pendingMoves={humanPendingMoves}
                                 pendingAction={pendingAction}
                                 actionError={decideError}
@@ -803,7 +769,7 @@ export default function Campanha() {
                                         <CardContent className="flex min-h-40 flex-col items-center justify-center gap-3 text-muted-foreground">
                                             <LoaderCircle className="size-5 animate-spin" />
                                             <p className="text-sm">
-                                                Analisando a partida... (a IA escreve o resumo e
+                                                Analisando a penteada... (a IA escreve o resumo e
                                                 comenta cada lance)
                                             </p>
                                         </CardContent>
@@ -866,12 +832,12 @@ function CurrentFocus({
 }) {
     const current = status?.current_move ?? null;
     const text = !active
-        ? "Partida encerrada."
+        ? "Penteada encerrada."
         : current
             ? current.stage === "awaiting_approval"
                 ? `Aguardando sua aprovação: ${current.title}`
                 : `Jogando: ${current.title}`
-            : "A IA está analisando o tabuleiro...";
+            : "A IA está passando o pente no alvo...";
 
     return (
         <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-border/50 bg-background/40 px-3 py-2.5">
@@ -1231,12 +1197,12 @@ function LiveAgent({
     const Icon = agent?.icon;
 
     const doingText = !active
-        ? "Partida encerrada — nenhum agente ativo."
+        ? "Penteada encerrada — nenhum agente ativo."
         : current
             ? current.stage === "awaiting_approval"
                 ? `Aguardando aprovação para: ${current.title}`
                 : currentMove?.plan?.action || `Jogando: ${current.title}`
-            : "Analisando o tabuleiro para o próximo lance...";
+            : "Passando o pente antes do próximo lance...";
 
     return (
         <div className="mt-4 border-t border-border/50 pt-3">

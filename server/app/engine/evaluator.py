@@ -1,4 +1,4 @@
-"""Evaluator: nota estilo Chess.com + score. 100% deterministico (sem LLM)."""
+"""Evaluator: nota estilo pente-fino + score. 100% deterministico (sem LLM)."""
 
 from __future__ import annotations
 

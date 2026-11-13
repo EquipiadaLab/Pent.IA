@@ -1,4 +1,4 @@
-"""Contrato compartilhado do Pentest Chess.
+"""Contrato compartilhado do PENT.IA.
 
 ATENCAO: este arquivo e o ponto de encontro entre o Motor (engine) e a
 Plataforma (api/db/reporter) e o frontend. Mudancas so por PR avisado ao
@@ -7,7 +7,7 @@ outro trilho, mantendo compatibilidade (campos novos sempre opcionais).
 Vocabulario:
 - ``status``   = RESULTADO do teste (so existe depois de executado).
 - ``approval`` = ESTADO DE APROVACAO humana (fluxo, independente do resultado).
-- ``grade``    = nota estilo Chess.com derivada de status x severity.
+- ``grade``    = nota estilo pente-fino derivada de status x severity.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ class Confidence(StrEnum):
 
 
 class Grade(StrEnum):
-    """Notas estilo Chess.com. ``inconclusive`` fica fora do score."""
+    """Notas estilo pente-fino. ``inconclusive`` fica fora do score."""
 
     BRILLIANT = "brilliant"
     GREAT = "great"
@@ -136,6 +136,12 @@ class CampaignConfig(BaseModel):
     only_tests: list[str] | None = Field(
         default=None, description="Revalidacao: joga so estes test_ids (definido pelo servidor)."
     )
+    max_moves: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximo de lances a jogar nesta campanha. None = sem limite "
+        "(joga todo o catalogo elegivel). O servidor encerra a campanha ao atingi-lo.",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -189,7 +195,7 @@ class Move(BaseModel):
 
     evidence: list[Evidence] = Field(default_factory=list)
     explanation: str | None = None  # fato deterministico do teste (sempre presente apos executar)
-    ai_explanation: str | None = None  # comentario da IA (Game Review), cita evidence ids; pode faltar
+    ai_explanation: str | None = None  # comentario da IA (Revisao da Penteada), cita evidence ids; pode faltar
     recommendation: str | None = None  # "melhor lance": a correcao
 
     plan: MovePlan | None = None  # hipotese/acao/resultado esperado/parada (antes de executar)
@@ -279,7 +285,7 @@ class ExecutiveSummary(BaseModel):
 
 
 class Comparison(BaseModel):
-    """Comparacao com a partida anterior do mesmo alvo (validacao continua)."""
+    """Comparacao com a penteada anterior do mesmo alvo (validacao continua)."""
 
     previous_campaign_id: str
     previous_accuracy: float | None = None
@@ -301,11 +307,11 @@ class TimelineEntry(BaseModel):
 
 
 class GameReview(BaseModel):
-    """Relatorio estilo Game Review do Chess.com."""
+    """Relatorio estilo Revisao da Penteada."""
 
     campaign: Campaign
     executive_summary: str | None = None
     key_moments: list[KeyMoment] = Field(default_factory=list)
     audit: list[AuditEntry] = Field(default_factory=list)
     summary: ExecutiveSummary | None = None  # versao estruturada do resumo
-    comparison: Comparison | None = None  # vs. partida anterior do mesmo alvo
+    comparison: Comparison | None = None  # vs. penteada anterior do mesmo alvo

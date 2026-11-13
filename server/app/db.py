@@ -66,6 +66,22 @@ CREATE TABLE IF NOT EXISTS audit (
     at          TEXT NOT NULL,
     entry_json  TEXT NOT NULL
 );
+
+-- Autenticacao: contas criadas pelo sistema (admin), nunca por cadastro aberto.
+CREATE TABLE IF NOT EXISTS users (
+    id            TEXT PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'operator',
+    created_at    TEXT NOT NULL
+);
+
+-- Configuracoes mutaveis geridas pelo admin (ex.: alvos autorizados, escopos bloqueados).
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
 
 
@@ -306,6 +322,72 @@ class Database:
             return [AuditEntry.model_validate_json(r["entry_json"]) for r in rows]
 
         return await self._run(_do)
+
+    # ---- users (autenticacao) -------------------------------------------
+    async def create_user(
+        self, user_id: str, username: str, password_hash: str, role: str
+    ) -> None:
+        def _do(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "INSERT INTO users (id, username, password_hash, role, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (user_id, username, password_hash, role, _utcnow().isoformat()),
+            )
+
+        await self._run(_do)
+
+    async def get_user_by_username(self, username: str) -> dict | None:
+        def _do(conn: sqlite3.Connection) -> dict | None:
+            row = conn.execute(
+                "SELECT * FROM users WHERE username = ?", (username,)
+            ).fetchone()
+            return dict(row) if row else None
+
+        return await self._run(_do)
+
+    async def count_users(self) -> int:
+        def _do(conn: sqlite3.Connection) -> int:
+            return int(conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"])
+
+        return await self._run(_do)
+
+    async def list_users(self) -> list[dict]:
+        def _do(conn: sqlite3.Connection) -> list[dict]:
+            rows = conn.execute(
+                "SELECT id, username, role, created_at FROM users ORDER BY created_at"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+        return await self._run(_do)
+
+    # ---- app_settings (config mutavel do admin) --------------------------
+    async def get_setting(self, key: str) -> object | None:
+        def _do(conn: sqlite3.Connection) -> object | None:
+            row = conn.execute(
+                "SELECT value_json FROM app_settings WHERE key = ?", (key,)
+            ).fetchone()
+            return json.loads(row["value_json"]) if row else None
+
+        return await self._run(_do)
+
+    async def set_setting(self, key: str, value: object) -> None:
+        def _do(conn: sqlite3.Connection) -> None:
+            conn.execute(
+                "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,"
+                " updated_at=excluded.updated_at",
+                (key, json.dumps(value), _utcnow().isoformat()),
+            )
+
+        await self._run(_do)
+
+    def all_settings_sync(self) -> dict[str, object]:
+        """Leitura sincrona de todas as configuracoes (uso no startup)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT key, value_json FROM app_settings"
+            ).fetchall()
+        return {r["key"]: json.loads(r["value_json"]) for r in rows}
 
 
 def _row_to_campaign(row: sqlite3.Row, moves: list[Move]) -> Campaign:

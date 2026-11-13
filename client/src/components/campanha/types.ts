@@ -94,6 +94,7 @@ export interface Campaign {
     authorized_at: string;
     unattended?: boolean;
     only_tests?: string[] | null;
+    max_moves?: number | null;
   };
   state: CampaignState;
   created_at: string;
@@ -131,6 +132,7 @@ export interface Scope {
   accepts_any_target: boolean;
   default_target: string | null;
   blocks_private_targets: boolean;
+  blocked_scopes?: string[];
   allowed_methods: string[];
   allowed_profiles?: Profile[];
   blocked_profiles?: Profile[];
@@ -269,6 +271,7 @@ export interface CreateCampaignBody {
     authorized_by: string;
     authorized_at: string;
     unattended?: boolean;
+    max_moves?: number | null;
   };
   revalidate_from?: string;
 }

@@ -1,4 +1,4 @@
-"""Exportacao detalhada do Game Review em Markdown e PDF.
+"""Exportacao detalhada da Revisao da Penteada em Markdown e PDF.
 
 O relatorio usa apenas dados ja registrados pelo Motor e mascarados pela
 Plataforma. Ele nao cria achados nem conclui que uma falha e exploravel sem
@@ -144,7 +144,7 @@ def _cve_markdown(matches: list[CveMatch]) -> list[str]:
 
 def to_markdown(review: GameReview, cves: list[CveMatch] | None = None) -> str:
     c = review.campaign
-    lines: list[str] = [f"# Game Review — {c.config.origin}", ""]
+    lines: list[str] = [f"# Revisao da Penteada — {c.config.origin}", ""]
     lines.extend(
         [
             f"- **Campanha:** `{c.id}`",
@@ -270,7 +270,7 @@ def _add_cve_pdf(flow: list, matches: list[CveMatch], styles) -> None:
 
 
 def to_pdf(review: GameReview, cves: list[CveMatch] | None = None) -> bytes:
-    """Renderiza o Game Review detalhado. Requer ``reportlab``."""
+    """Renderiza a Revisao da Penteada detalhada. Requer ``reportlab``."""
     if not PDF_AVAILABLE:  # pragma: no cover
         raise RuntimeError("Exportacao PDF indisponivel: instale 'reportlab'.")
 
@@ -280,7 +280,7 @@ def to_pdf(review: GameReview, cves: list[CveMatch] | None = None) -> bytes:
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        title="Pentest Chess — Game Review",
+        title="PENT.IA — Revisao da Penteada",
         leftMargin=18 * mm,
         rightMargin=18 * mm,
         topMargin=16 * mm,
@@ -290,7 +290,7 @@ def to_pdf(review: GameReview, cves: list[CveMatch] | None = None) -> bytes:
     flow: list = []
     c = review.campaign
 
-    flow.append(_paragraph(f"Game Review — {c.config.origin}", styles["Title"]))
+    flow.append(_paragraph(f"Revisao da Penteada — {c.config.origin}", styles["Title"]))
     flow.append(_paragraph(f"Campanha: {c.id}", styles["Normal"]))
     flow.append(_paragraph(f"Estado: {c.state.value}", styles["Normal"]))
     flow.append(_paragraph(f"Autorizado por: {c.config.authorized_by}", styles["Normal"]))

@@ -34,7 +34,7 @@ SAFETY_PREAMBLE = (
 )
 
 
-MAX_PROMPT = 120_000  # caracteres; teto de custo, bem acima de uma partida inteira
+MAX_PROMPT = 120_000  # caracteres; teto de custo, bem acima de uma penteada inteira
 
 
 class LLMError(RuntimeError):

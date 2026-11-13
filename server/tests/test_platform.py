@@ -2,7 +2,7 @@
 
 Exercita a entrega ao Motor: EventSink (emit/audit), fila de aprovacao
 (wait_approval) e parada (should_stop), alem do mascaramento de segredos e
-do Game Review.
+da Revisao da Penteada.
 """
 
 from __future__ import annotations
@@ -150,7 +150,7 @@ async def test_game_review_markdown() -> None:
     review = await ReportBuilder(TemplateLLMClient()).build(campaign, audit)
     md = to_markdown(review)
 
-    assert "# Game Review" in md
+    assert "# Revisao da Penteada" in md
     assert "Momentos-chave" in md
     assert "segredo-super-secreto" not in md  # segredos nunca no relatorio
     db.close()

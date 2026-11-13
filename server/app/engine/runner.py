@@ -66,6 +66,12 @@ async def run_campaign(campaign_id: str, config: CampaignConfig, sink: EventSink
                 campaign.state = CampaignState.STOPPED
                 break
 
+            # Limite de lances escolhido na criacao: encerra ao atingi-lo, antes
+            # de planejar o proximo lance (garante no maximo ``max_moves`` lances).
+            if config.max_moves is not None and len(campaign.moves) >= config.max_moves:
+                campaign.state = CampaignState.FINISHED
+                break
+
             pent_choice = _pent_choice(campaign_id, config, campaign.moves, guard, planner, pent)
             if pent_choice is not None:
                 spec, plan, recommendation = pent_choice

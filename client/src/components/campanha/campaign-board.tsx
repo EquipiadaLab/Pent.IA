@@ -503,7 +503,7 @@ function ResultCard({
                 <Section
                   icon={Bot}
                   iconClass="text-sky-300"
-                  label="Comentário do treinador (IA)"
+                  label="Comentário do penteador (IA)"
                   badge={
                     move.ai_review?.verdict === "approved"
                       ? "revisado pelo juiz"
@@ -594,7 +594,7 @@ function ResultCard({
             className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <FileText />
-            Ver Game Review
+            Ver Revisão da Penteada
           </Button>
         )}
         {canGenerateCves && (

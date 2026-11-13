@@ -1,4 +1,4 @@
-"""Pent, o agente master do Pentest Chess.
+"""Pent, o agente master do PENT.IA.
 
 Pent coordena agentes especialistas. Ele nao executa HTTP, nao cria comandos e
 nao concede permissao a si proprio. Sua saida e uma recomendacao de um

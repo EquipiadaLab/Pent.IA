@@ -10,12 +10,16 @@ import {
 } from "lucide-react";
 import { api, getApiErrorMessage } from "@/lib/api";
 import { fadeUp, staggerContainer } from "@/lib/motion";
+import { useAuth } from "@/hooks/use-auth";
 import type { Scope } from "./campanha/types";
+import { AdminScopeEditor } from "./admin/scope-editor";
+import { UserAdmin } from "./admin/user-admin";
 import { PageHeader } from "./layout/page-header";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 
 export default function Allowlist() {
+    const isAdmin = useAuth((s) => s.user?.role === "admin");
     const scopeQuery = useQuery({
         queryKey: ["scope"],
         queryFn: async () => (await api.get<Scope>("/scope")).data,
@@ -23,6 +27,7 @@ export default function Allowlist() {
     const scope = scopeQuery.data;
     const lockedTarget = scope?.locked_target ?? null;
     const targets = scope?.authorized_targets ?? [];
+    const blockedScopes = scope?.blocked_scopes ?? [];
 
     return (
         <div className="space-y-5">
@@ -60,6 +65,9 @@ export default function Allowlist() {
                     </Button>
                 </div>
             )}
+
+            {isAdmin && <AdminScopeEditor />}
+            {isAdmin && <UserAdmin />}
 
             {scopeQuery.isPending ? (
                 <Card className="border-border/60 bg-card/40">
@@ -163,8 +171,38 @@ export default function Allowlist() {
                                             : "permitidas"
                                     }
                                 />
+                                <Row
+                                    icon={<ShieldBan className="size-3.5 text-rose-300" />}
+                                    label="Escopos bloqueados"
+                                    value={
+                                        blockedScopes.length > 0
+                                            ? `${blockedScopes.length} host(s)`
+                                            : "nenhum"
+                                    }
+                                />
                             </CardContent>
                         </Card>
+
+                        {blockedScopes.length > 0 && (
+                            <Card className="border-rose-500/15 bg-rose-500/[0.035]">
+                                <CardContent className="p-5">
+                                    <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                                        <ShieldBan className="size-3.5 text-rose-300" />
+                                        Escopos bloqueados pelo admin
+                                    </p>
+                                    <ul className="mt-2 space-y-1.5">
+                                        {blockedScopes.map((item) => (
+                                            <li
+                                                key={item}
+                                                className="break-all rounded-lg border border-rose-500/20 bg-background/30 px-3 py-2 font-mono text-xs text-rose-200/90"
+                                            >
+                                                {item}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </CardContent>
+                            </Card>
+                        )}
                     </motion.div>
                 </motion.div>
             )}

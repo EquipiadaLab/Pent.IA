@@ -177,7 +177,7 @@ class ConsolidatedFinding(BaseModel):
 
 
 class MasterVerdict(BaseModel):
-    """Saida final do Pent: o 'game review' consolidado da campanha.
+    """Saida final do Pent: a 'revisao da penteada' consolidada da campanha.
 
     E aqui que mora o requisito de negocio: para cada falha, o relatorio
     final precisa mostrar (1) o problema, (2) como um hacker exploraria,

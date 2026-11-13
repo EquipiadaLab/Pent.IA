@@ -58,7 +58,7 @@ export const AGENTS: AgentDef[] = [
   {
     id: "pent",
     name: "Pent",
-    role: "Mestre · orquestra a partida",
+    role: "Mestre · orquestra a penteada",
     icon: CombIcon,
     accent: "rose",
     master: true,

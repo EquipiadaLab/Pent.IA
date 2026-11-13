@@ -34,7 +34,7 @@ _INTERESTING_HEADERS = (
 )
 
 SYSTEM = (
-    "Voce e o agente planejador de um pentest AUTORIZADO, conduzido como uma partida de xadrez. "
+    "Voce e o agente planejador de um pentest AUTORIZADO, conduzido como uma penteada metodica no alvo. "
     "A cada jogada voce escolhe UM teste da lista 'available_tests' (catalogo fechado de testes "
     "seguros, so leitura) e explica o raciocinio. Use o que ja foi observado para priorizar: "
     "comece pelo que tem maior chance de revelar risco alto dado o contexto, e encadeie hipoteses "

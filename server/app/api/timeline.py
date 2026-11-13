@@ -30,7 +30,7 @@ def _from_event(ev: Event) -> TimelineEntry | None:
     m, d, t = ev.move, ev.data, ev.type
     n = m.move if m else d.get("move")
     if t is EventType.CAMPAIGN_STARTED:
-        return TimelineEntry(at=ev.at, kind="campaign", summary=f"Partida iniciada contra {d.get('origin')}",
+        return TimelineEntry(at=ev.at, kind="campaign", summary=f"Penteada iniciada contra {d.get('origin')}",
                              details={k: d.get(k) for k in ("planner", "unattended")})
     if t is EventType.MOVE_PLANNED and m:
         plan = m.plan.model_dump(mode="json") if m.plan else {}
@@ -60,7 +60,7 @@ def _from_event(ev: Event) -> TimelineEntry | None:
     if t is EventType.STOP_REQUESTED:
         return TimelineEntry(at=ev.at, kind="stop", summary=f"Parada de emergencia por {d.get('actor', 'operator')}")
     if t is EventType.CAMPAIGN_FINISHED:
-        return TimelineEntry(at=ev.at, kind="campaign", summary=f"Partida encerrada: {d.get('state')}",
+        return TimelineEntry(at=ev.at, kind="campaign", summary=f"Penteada encerrada: {d.get('state')}",
                              details={k: d.get(k) for k in ("state", "accuracy", "requests", "reason")})
     return None  # test_started / score_updated ficam so no ao vivo
 

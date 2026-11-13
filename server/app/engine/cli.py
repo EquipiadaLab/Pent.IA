@@ -25,7 +25,7 @@ async def _main(args: argparse.Namespace) -> None:
     )
     sink = MemorySink(approve=args.approve_active)
     campaign = await run_campaign(uuid.uuid4().hex, config, sink)
-    print(f"\nPentest Chess — {config.origin}\n")
+    print(f"\nPENT.IA — {config.origin}\n")
     for mv in campaign.moves:
         grade = mv.grade.value if mv.grade else f"({mv.approval.value})"
         print(f"{mv.move:>2}. [{ICON.get(grade, '  ')}] {grade:<12} {mv.test_id:<10} {mv.title}")
