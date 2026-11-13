@@ -101,3 +101,53 @@ def test_campaign_status_progress_and_pending(client, lab):
     assert st["last_seq"] == client.get(f"/campaigns/{cid}/events").json()[-1]["seq"]
     assert client.get("/campaigns/nao-existe/status").status_code == 404
     assert client.get("/status").json()["campaigns"]["finished"] == 1
+
+
+def _finish_campaign(client, cid, timeout=30):
+    end = time.time() + timeout
+    while time.time() < end:
+        cam = client.get(f"/campaigns/{cid}").json()
+        for m in cam["moves"]:
+            if m["approval"] == "pending":
+                client.post(f"/campaigns/{cid}/moves/{m['move']}/approve")
+        if cam["state"] in ("finished", "stopped", "failed"):
+            return cam
+        time.sleep(0.05)
+    raise AssertionError("campanha nao terminou")
+
+
+def test_campaign_agents_reports_each_specialist_participation(client, lab):
+    cid = client.post(
+        "/campaigns",
+        json={"config": {"origin": lab, "authorized_by": "Org", "authorized_at": "2026-11-12T15:00:00Z",
+                         "max_requests_per_second": 5}},
+    ).json()["id"]
+    _finish_campaign(client, cid)
+
+    r = client.get(f"/campaigns/{cid}/agents")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["campaign_id"] == cid
+
+    by_agent = {a["agent"]: a for a in body["agents"]}
+    # Recon sempre participa primeiro (abertura): TLS-002 contra um alvo HTTP e TLS-001.
+    assert "Recon" in by_agent
+    assert by_agent["Recon"]["moves_recommended"] >= 1
+    assert by_agent["Recon"]["tactic_id"] == "TA0043"
+    assert "T1595" in by_agent["Recon"]["techniques_used"]
+
+    # Discovery participa (INFO-001).
+    assert "Discovery" in by_agent
+    assert by_agent["Discovery"]["tactic_id"] == "TA0007"
+
+    # Soma de todos os agentes (incluindo o fallback "-") cobre todos os lances.
+    total_recommended = sum(a["moves_recommended"] for a in body["agents"])
+    assert total_recommended == len(cam_moves(client, cid))
+
+
+def cam_moves(client, cid):
+    return client.get(f"/campaigns/{cid}/moves").json()
+
+
+def test_campaign_agents_unknown_campaign_404s(client):
+    assert client.get("/campaigns/nao-existe/agents").status_code == 404

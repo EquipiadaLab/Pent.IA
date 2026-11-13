@@ -607,6 +607,46 @@
         }
       }
     },
+    "/campaigns/{campaign_id}/agents": {
+      "get": {
+        "summary": "Campaign Agents",
+        "description": "Participacao de cada agente que o Pent convocou nesta campanha.\n\nAgregado a partir de ``Move.recommended_by``/``attack_tactic_id``/``attack_technique_id``,\nja preenchidos pelo runner quando Pent escolhe a recomendacao de um agente (ver\n``app/engine/runner.py:_new_move``). Lances tocados pelo fallback do catalogo (ainda sem\nagente especialista) aparecem agrupados como agente ``\"-\"``.",
+        "operationId": "campaign_agents_campaigns__campaign_id__agents_get",
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentsParticipationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -654,6 +694,96 @@
         ],
         "title": "AIReview",
         "description": "Parecer do 'juiz' (IA revisora) sobre o comentario da IA."
+      },
+      "AgentParticipation": {
+        "properties": {
+          "agent": {
+            "type": "string",
+            "title": "Agent",
+            "description": "Nome do agente, ex.: 'Recon', 'Collection'. '-' = lance sem agente (fallback do catalogo)."
+          },
+          "tactic_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tactic Id",
+            "description": "Tatica MITRE ATT&CK, ex.: 'TA0043'."
+          },
+          "tactic_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tactic Name"
+          },
+          "moves_recommended": {
+            "type": "integer",
+            "title": "Moves Recommended",
+            "description": "Quantos lances este agente recomendou e foram jogados."
+          },
+          "moves_approved": {
+            "type": "integer",
+            "title": "Moves Approved"
+          },
+          "moves_denied": {
+            "type": "integer",
+            "title": "Moves Denied"
+          },
+          "findings": {
+            "type": "integer",
+            "title": "Findings",
+            "description": "Lances com status fail/warning confirmados (contam no placar)."
+          },
+          "techniques_used": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Techniques Used",
+            "description": "IDs de tecnica MITRE observados, ex.: ['T1595', 'T1213']."
+          }
+        },
+        "type": "object",
+        "required": [
+          "agent",
+          "tactic_id",
+          "moves_recommended",
+          "moves_approved",
+          "moves_denied",
+          "findings"
+        ],
+        "title": "AgentParticipation",
+        "description": "Participacao de UM agente especialista (Recon, Discovery, etc.) na campanha."
+      },
+      "AgentsParticipationResponse": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "title": "Campaign Id"
+          },
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentParticipation"
+            },
+            "type": "array",
+            "title": "Agents"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "agents"
+        ],
+        "title": "AgentsParticipationResponse"
       },
       "Approval": {
         "type": "string",
@@ -1684,6 +1814,72 @@
               }
             ]
           },
+          "recommended_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended By"
+          },
+          "attack_tactic_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Tactic Id"
+          },
+          "attack_tactic_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Tactic Name"
+          },
+          "attack_technique_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Technique Id"
+          },
+          "attack_technique_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Technique Name"
+          },
+          "attack_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Url"
+          },
           "verdict": {
             "anyOf": [
               {
@@ -1704,6 +1900,17 @@
               }
             ],
             "title": "Impact"
+          },
+          "exploitation_scenario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exploitation Scenario"
           },
           "reproduce": {
             "items": {

@@ -52,6 +52,84 @@ A IA agora **joga a partida**. O código continua como **árbitro**. Tudo chega 
 `finding_created` e o próximo `move_planned`, mostre **"A IA está analisando o tabuleiro..."**.
 O primeiro `GET /report` leva ~25 s (treinador + juiz + resumo).
 
+## 0B. Agentes especialistas (Pent + MITRE ATT&CK) — IMPORTANTE, leia antes de montar o "quem participou"
+
+Desde a arquitetura multiagente, cada lance pode ter sido **recomendado por um agente especialista**
+em uma tática do MITRE ATT&CK (Recon, Discovery, InitialAccess, Collection, PrivilegeEscalation,
+Execution, Impact, CredentialAccess — mais táticas chegando). O agente master **Pent** coordena esses
+especialistas, valida a sugestão contra o catálogo fechado e só então o Motor executa (sempre com
+aprovação humana nos testes do `endgame`).
+
+**Se o seu painel está mostrando "0 interação" para os agentes, é porque esses campos abaixo (que já
+existem na API desde antes) ainda não foram consumidos no front.** Eles vêm dentro de cada `Move`:
+
+```json
+{
+  "move": 9,
+  "test_id": "COLLECT-APIFEEDBACK-001",
+  "recommended_by": "Collection",
+  "attack_tactic_id": "TA0009",
+  "attack_tactic_name": "Collection",
+  "attack_technique_id": "T1213",
+  "attack_technique_name": "Data from Information Repositories",
+  "attack_url": "https://attack.mitre.org/techniques/T1213",
+  "exploitation_scenario": "Permite relacionar comentarios publicos a contas especificas...",
+  "...": "demais campos de Move (seção 4.2)"
+}
+```
+
+| Campo novo em `Move` | Comportamento na tela |
+|---|---|
+| `recommended_by` | Nome do agente que sugeriu o lance (ex.: `"Recon"`). **`null` ou `"-"`** = lance veio do fallback do catálogo (ainda sem agente especialista dedicado) |
+| `attack_tactic_id` / `attack_tactic_name` | Tática MITRE ATT&CK (ex.: `"TA0043"` / `"Reconnaissance"`). Selo no card do lance |
+| `attack_technique_id` / `attack_technique_name` | Técnica MITRE (ex.: `"T1595"` / `"Active Scanning"`) |
+| `attack_url` | Link oficial `attack.mitre.org` da técnica — abra em nova aba |
+| `exploitation_scenario` | Texto explicando como um atacante se aproveitaria da falha (só em achados `fail`/`warning`). Mostre junto de `recommendation` no painel de detalhe |
+
+**Sugestão de UI:** no card do lance, mostre um selo com o nome do agente + ícone da tática
+(ex.: "🔎 Recon · Reconnaissance"). Isso é o que prova visualmente que "vários agentes jogaram",
+não só o Pent.
+
+### Novo endpoint: `GET /campaigns/{id}/agents` — participação agregada
+
+Pensado exatamente para a tela "Agentes" (lista com quantos lances cada um jogou, achados
+confirmados e técnicas MITRE usadas) — **sem precisar agregar isso manualmente no front**.
+
+```json
+{
+  "campaign_id": "a9c3bfcb4db84ce5ac0a048cfc6870cb",
+  "agents": [
+    { "agent": "Recon", "tactic_id": "TA0043", "tactic_name": "Reconnaissance",
+      "moves_recommended": 7, "moves_approved": 7, "moves_denied": 0,
+      "findings": 1, "techniques_used": ["T1594", "T1595"] },
+    { "agent": "Discovery", "tactic_id": "TA0007", "tactic_name": "Discovery",
+      "moves_recommended": 1, "moves_approved": 1, "moves_denied": 0,
+      "findings": 0, "techniques_used": ["T1518"] },
+    { "agent": "Collection", "tactic_id": "TA0009", "tactic_name": "Collection",
+      "moves_recommended": 3, "moves_approved": 3, "moves_denied": 0,
+      "findings": 1, "techniques_used": ["T1213"] },
+    { "agent": "CredentialAccess", "tactic_id": "TA0006", "tactic_name": "Credential Access",
+      "moves_recommended": 1, "moves_approved": 1, "moves_denied": 0,
+      "findings": 1, "techniques_used": ["T1212"] },
+    { "agent": "-", "tactic_id": null, "tactic_name": null,
+      "moves_recommended": 9, "moves_approved": 9, "moves_denied": 0,
+      "findings": 4, "techniques_used": [] }
+  ]
+}
+```
+
+| Campo | Comportamento na tela |
+|---|---|
+| `agent` | Nome do agente. `"-"` = lances do catálogo ainda sem agente especialista dedicado (ex.: headers, cookies, CORS) — mostre como "Motor (regras)" em vez de "-" |
+| `tactic_id` / `tactic_name` | Selo da tática MITRE daquele agente |
+| `moves_recommended` | Quantos lances aquele agente sugeriu nesta campanha (barra/contador) |
+| `moves_approved` / `moves_denied` | Quantos foram aprovados vs. negados pelo humano |
+| `findings` | Quantos lances deram `fail`/`warning` **confirmados** (não descartados) — "achados" daquele agente |
+| `techniques_used` | Lista de IDs de técnica MITRE observados (ex.: `["T1595", "T1594"]`) — chips clicáveis para `attack.mitre.org/techniques/{id}` |
+
+Chame esse endpoint junto com `GET /campaigns/{id}/report`, quando a campanha terminar (ou a
+qualquer momento, para mostrar progresso parcial por agente).
+
 **No card do lance**, mostre o plano antes do resultado:
 > **Hipótese:** {plan.hypothesis} · **Esperado:** {plan.expected_result} · **Por quê:** {plan.rationale}
 > Selo: `IA` se `plan.source = "ai"`, `Regras` se `"rules"`.
@@ -85,9 +163,10 @@ Os títulos dos testes passaram a ser neutros (ex.: "Exposicao do repositorio .g
 | 12 | **WS** | `/campaigns/{id}/ws?since=N` | **Ao vivo por WebSocket** (recomendado) | stream de `Event` |
 | 13 | GET | `/campaigns/{id}/audit` | **Trilha de auditoria** cronológica (item 8) | 200 `TimelineEntry[]` |
 | 14 | GET | `/status` | **Painel "sistema no ar"**: API, banco, motor e IA | 200 `StatusResponse` |
-| 15 | GET | `/catalog` | Os 14 testes que o agente pode jogar (o "tabuleiro") | 200 `CatalogTest[]` |
+| 15 | GET | `/catalog` | Todos os testes que o agente pode jogar (o "tabuleiro"; o total cresce conforme mais agentes são adicionados — confira `/status` para o número atual) | 200 `CatalogTest[]` |
 | 16 | GET | `/scope` | Regras de engajamento do servidor (alvos autorizados, limites, pré-aprovação) | 200 `ScopeResponse` |
 | 17 | GET | `/campaigns/{id}/status` | Progresso resumido da partida (barra de progresso, pendências) | 200 `CampaignStatusResponse` |
+| 18 | GET | `/campaigns/{id}/agents` | **Tela "Agentes"**: participação de Pent/Recon/Discovery/etc. (ver seção 0B) | 200 `AgentsParticipationResponse` |
 
 Não há endpoint separado de auditoria: ela vem em `GET /report` → `audit`.
 
@@ -250,7 +329,7 @@ Saúde detalhada. **Rápido** por padrão (não chama a IA).
   "components": {
     "api":      { "status": "ok",  "detail": null, "latency_ms": null },
     "database": { "status": "ok",  "detail": null, "latency_ms": 0 },
-    "engine":   { "status": "ok",  "detail": "14 testes no catalogo", "latency_ms": null },
+    "engine":   { "status": "ok",  "detail": "N testes no catalogo (N cresce conforme agentes sao adicionados)", "latency_ms": null },
     "llm":      { "status": "ok",  "detail": "Bedrock respondeu", "latency_ms": 1553 }
   },
   "campaigns": { "total": 3, "created": 0, "running": 1, "waiting_approval": 0, "stopped": 0, "finished": 2, "failed": 0 }
@@ -516,6 +595,15 @@ Exemplo real:
 | `impact` | "O que pode acontecer" — mostre em achados `warning`/`fail` |
 | `reproduce` | Lista de comandos `curl` — bloco de código com botão copiar ("Como reproduzir") |
 | `ai_review` | `approved` → mostrar `ai_explanation` com selo "revisado pelo juiz". `rejected` → `ai_explanation` vem `null`; opcionalmente mostre "comentário da IA reprovado" + `issues` |
+
+#### Campos do agente especialista que recomendou o lance (ver seção 0B)
+| Campo | Comportamento |
+|---|---|
+| `recommended_by` | Nome do agente (ex.: `"Recon"`). `null`/`"-"` = fallback do catálogo |
+| `attack_tactic_id` / `attack_tactic_name` | Tática MITRE (ex.: `"TA0043"` / `"Reconnaissance"`) — selo no card |
+| `attack_technique_id` / `attack_technique_name` | Técnica MITRE (ex.: `"T1595"` / `"Active Scanning"`) |
+| `attack_url` | Link oficial da técnica em `attack.mitre.org` |
+| `exploitation_scenario` | Como um atacante exploraria a falha, em linguagem simples (achados `fail`/`warning`) |
 
 ### 4.3 `Evidence`
 ```json

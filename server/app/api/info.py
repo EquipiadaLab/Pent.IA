@@ -22,7 +22,7 @@ from app.api.context import AppContext, get_ctx
 from app.api.routes import _MAX_RPS, _MAX_TIMEOUT_S, _MAX_TOTAL, _SAFE_METHODS, _SAFE_PROFILES
 from app.authorization import _block_private, accepts_any_target, authorized_origins, default_target
 from app.engine.checks import CATALOG
-from app.models import Approval, CampaignState, Phase, Profile, Score, Severity
+from app.models import Approval, CampaignState, Phase, Profile, Score, Severity, Status
 from app.policy import preapproval
 
 router = APIRouter()
@@ -112,6 +112,24 @@ class CampaignStatusResponse(BaseModel):
     created_at: datetime
     finished_at: datetime | None
     elapsed_s: int
+
+
+class AgentParticipation(BaseModel):
+    """Participacao de UM agente especialista (Recon, Discovery, etc.) na campanha."""
+
+    agent: str = Field(description="Nome do agente, ex.: 'Recon', 'Collection'. '-' = lance sem agente (fallback do catalogo).")
+    tactic_id: str | None = Field(description="Tatica MITRE ATT&CK, ex.: 'TA0043'.")
+    tactic_name: str | None = None
+    moves_recommended: int = Field(description="Quantos lances este agente recomendou e foram jogados.")
+    moves_approved: int
+    moves_denied: int
+    findings: int = Field(description="Lances com status fail/warning confirmados (contam no placar).")
+    techniques_used: list[str] = Field(default_factory=list, description="IDs de tecnica MITRE observados, ex.: ['T1595', 'T1213'].")
+
+
+class AgentsParticipationResponse(BaseModel):
+    campaign_id: str
+    agents: list[AgentParticipation]
 
 
 # ------------------------------------------------------------------ /status
@@ -244,3 +262,59 @@ async def campaign_status(campaign_id: str, ctx: AppContext = Depends(get_ctx)) 
         finished_at=c.finished_at,
         elapsed_s=max(0, int((end - c.created_at).total_seconds())),
     )
+
+
+# ------------------------------------------------------------------ /campaigns/{id}/agents
+@router.get("/campaigns/{campaign_id}/agents", response_model=AgentsParticipationResponse)
+async def campaign_agents(campaign_id: str, ctx: AppContext = Depends(get_ctx)) -> AgentsParticipationResponse:
+    """Participacao de cada agente que o Pent convocou nesta campanha.
+
+    Agregado a partir de ``Move.recommended_by``/``attack_tactic_id``/``attack_technique_id``,
+    ja preenchidos pelo runner quando Pent escolhe a recomendacao de um agente (ver
+    ``app/engine/runner.py:_new_move``). Lances tocados pelo fallback do catalogo (ainda sem
+    agente especialista) aparecem agrupados como agente ``"-"``.
+    """
+    c = await ctx.db.get_campaign(campaign_id)
+    if c is None:
+        raise HTTPException(status_code=404, detail="Campanha nao encontrada.")
+
+    buckets: dict[str, dict] = {}
+    order: list[str] = []
+    for mv in c.moves:
+        agent = mv.recommended_by or "-"
+        if agent not in buckets:
+            buckets[agent] = {
+                "tactic_id": mv.attack_tactic_id,
+                "tactic_name": mv.attack_tactic_name,
+                "moves_recommended": 0,
+                "moves_approved": 0,
+                "moves_denied": 0,
+                "findings": 0,
+                "techniques_used": set(),
+            }
+            order.append(agent)
+        bucket = buckets[agent]
+        bucket["moves_recommended"] += 1
+        if mv.approval is Approval.APPROVED:
+            bucket["moves_approved"] += 1
+        elif mv.approval is Approval.DENIED:
+            bucket["moves_denied"] += 1
+        if mv.status in (Status.FAIL, Status.WARNING) and mv.verdict != "discarded":
+            bucket["findings"] += 1
+        if mv.attack_technique_id:
+            bucket["techniques_used"].add(mv.attack_technique_id)
+
+    agents = [
+        AgentParticipation(
+            agent=name,
+            tactic_id=buckets[name]["tactic_id"],
+            tactic_name=buckets[name]["tactic_name"],
+            moves_recommended=buckets[name]["moves_recommended"],
+            moves_approved=buckets[name]["moves_approved"],
+            moves_denied=buckets[name]["moves_denied"],
+            findings=buckets[name]["findings"],
+            techniques_used=sorted(buckets[name]["techniques_used"]),
+        )
+        for name in order
+    ]
+    return AgentsParticipationResponse(campaign_id=campaign_id, agents=agents)
