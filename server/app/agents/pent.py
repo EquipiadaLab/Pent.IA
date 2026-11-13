@@ -12,10 +12,14 @@ nao concede permissao a si proprio. Sua saida e uma recomendacao de um
 
 from __future__ import annotations
 
+from app.agents.Discovery.discovery_agent import DiscoveryAgent
+from app.agents.InitialAccess.initial_access_agent import InitialAccessAgent
 from app.agents.Recon.recon_agent import ReconAgent
 from app.agents.base_agent import BaseTacticAgent
 from app.engine.checks import CATALOG_BY_ID
 from app.schemas.agents_contract import PentDecision, TacticDecisionContext, TechniqueRecommendation
+
+_PHASE_ORDER = {"opening": 0, "middlegame": 1, "endgame": 2}
 
 
 class Pent:
@@ -24,9 +28,13 @@ class Pent:
     name = "Pent"
 
     def __init__(self, agents: list[BaseTacticAgent] | None = None) -> None:
-        # Conforme novos agentes forem implementados, eles entram aqui sem
-        # mudar a regra de seguranca do Pent.
-        self._agents = agents if agents is not None else [ReconAgent()]
+        # Registro explicito e deterministico: cada agente so recomenda
+        # checks existentes; Pent continua sendo o arbitro comum.
+        self._agents = (
+            agents
+            if agents is not None
+            else [ReconAgent(), DiscoveryAgent(), InitialAccessAgent()]
+        )
 
     def choose_next(self, context: TacticDecisionContext) -> PentDecision:
         """Seleciona a melhor sugestao valida, sem rede e sem efeitos.
@@ -37,13 +45,30 @@ class Pent:
         runner.
         """
         allowed = set(context.available_test_ids)
+        available_specs = {
+            test_id: CATALOG_BY_ID[test_id]
+            for test_id in allowed
+            if test_id in CATALOG_BY_ID
+        }
+        if not available_specs:
+            return PentDecision(
+                campaign_id=context.campaign_id,
+                reason="Nao ha mais testes implementados, permitidos e aplicaveis para esta campanha.",
+            )
+
+        # O master respeita a progressao da campanha. Um agente de endgame
+        # nao pode pular abertura/meio-jogo apenas por ter prioridade alta.
+        current_phase_order = min(
+            _PHASE_ORDER[spec.phase.value] for spec in available_specs.values()
+        )
         candidates: list[TechniqueRecommendation] = []
 
         for agent in self._agents:
             for recommendation in agent.recommend(context):
-                if recommendation.test_id not in allowed:
+                spec = available_specs.get(recommendation.test_id)
+                if spec is None:
                     continue
-                if recommendation.test_id not in CATALOG_BY_ID:
+                if _PHASE_ORDER[spec.phase.value] != current_phase_order:
                     continue
                 candidates.append(recommendation)
 

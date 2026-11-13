@@ -76,14 +76,7 @@ RECON_TECHNIQUES: tuple[ReconTechnique, ...] = (
         rationale="Verificar se visitantes que chegam por HTTP sao protegidos por redirecionamento para HTTPS.",
         applies=_is_https,
     ),
-    ReconTechnique(
-        test_id="INFO-001",
-        technique_id="T1595",
-        base_priority=80,
-        request_cost=1,
-        risk="low",
-        expected_value="medium",
-        rationale="Identificar versoes e tecnologias expostas em cabecalhos publicos, sem alterar o alvo.",
-        applies=_always,
-    ),
+    # O fingerprint de tecnologia e responsabilidade exclusiva do
+    # DiscoveryAgent (TA0007/T1518), evitando dois agentes recomendarem o
+    # mesmo CheckSpec.
 )
