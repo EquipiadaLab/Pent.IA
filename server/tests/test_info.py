@@ -55,9 +55,12 @@ def test_status_check_llm_never_leaks(client, monkeypatch):
     assert "AKIA" not in llm["detail"] and "arn:" not in llm["detail"]
 
 
+from app.engine.checks import CATALOG
+
+
 def test_catalog(client):
     cat = client.get("/catalog").json()
-    assert len(cat) == 14
+    assert len(cat) == len(CATALOG)
     git = next(t for t in cat if t["test_id"] == "FILE-001")
     assert git["needs_approval"] is True and git["hypothesis"] and git["impact"]
 
@@ -93,7 +96,7 @@ def test_campaign_status_progress_and_pending(client, lab):
             break
         time.sleep(0.05)
     assert saw_pending
-    assert st["progress"] == {"played": 14, "total": 14, "percent": 100}
+    assert st["progress"] == {"played": len(CATALOG), "total": len(CATALOG), "percent": 100}
     assert st["current_move"] is None and st["score"]["accuracy"] < 40
     assert st["last_seq"] == client.get(f"/campaigns/{cid}/events").json()[-1]["seq"]
     assert client.get("/campaigns/nao-existe/status").status_code == 404

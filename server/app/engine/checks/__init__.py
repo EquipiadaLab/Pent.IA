@@ -4,7 +4,7 @@ Adicionar um lance = acrescentar um CheckSpec aqui. O agente (e a IA) so
 escolhe lances deste catalogo: nunca cria requisicoes novas.
 """
 
-from app.engine.checks import active, cookies, headers, transport
+from app.engine.checks import active, cookies, headers, recon, transport
 from app.engine.checks.base import CheckSpec
 from app.models import Phase, Profile, Severity
 
@@ -39,6 +39,26 @@ CATALOG: list[CheckSpec] = [
           hyp="Os cabecalhos podem revelar o software e a versao do servidor.",
           exp="Server sem numero de versao e sem X-Powered-By.",
           imp="Versao exposta ajuda um atacante a escolher exploits conhecidos para aquela versao."),
+    _spec("RECON-ROBOTS-001", "Metadados publicos em robots.txt", P.OPENING, PASSIVE, L, "WSTG-INFO-03", "A05:2025",
+          recon.robots_txt,
+          hyp="robots.txt pode revelar caminhos que o proprio site declara publicamente.",
+          exp="Registrar se o recurso publico existe, sem seguir caminhos listados.",
+          imp="Diretorios publicamente declarados podem orientar reconhecimento posterior; nao sao falha por si so."),
+    _spec("RECON-SITEMAP-001", "Mapa publico do site", P.OPENING, PASSIVE, L, "WSTG-INFO-03", "A05:2025",
+          recon.sitemap_xml,
+          hyp="sitemap.xml pode listar recursos publicos da aplicacao.",
+          exp="Registrar se o recurso publico existe, sem seguir URLs listadas.",
+          imp="Um mapa publico ajuda a entender a superficie exposta, mas sua existencia nao e vulnerabilidade."),
+    _spec("RECON-SECURITYTXT-001", "Canal publico de seguranca", P.OPENING, PASSIVE, L, "WSTG-INFO-03", "A05:2025",
+          recon.security_txt,
+          hyp="O dominio pode nao publicar o canal security.txt para receber reportes responsaveis.",
+          exp="/.well-known/security.txt esta disponivel com canal de contato.",
+          imp="Sem canal publico, pesquisadores podem ter dificuldade para reportar falhas de forma responsavel."),
+    _spec("RECON-OPENAPI-001", "Documentacao publica de API", P.OPENING, PASSIVE, L, "WSTG-INFO-05", "A05:2025",
+          recon.openapi_documentation,
+          hyp="O alvo pode expor uma especificacao OpenAPI publicamente.",
+          exp="Registrar a existencia de /openapi.json sem chamar endpoints descritos.",
+          imp="Documentacao publica mostra a superficie da API; sua existencia nao e vulnerabilidade por si so."),
     # --- Meio-jogo (configuracao) ---
     _spec("HSTS-001", "Politica HSTS", P.MIDDLEGAME, PASSIVE, MED, "WSTG-CONF-07", "A02:2025", headers.hsts,
           hyp="O navegador pode nao ser obrigado a usar HTTPS nas proximas visitas.",

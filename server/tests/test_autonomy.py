@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
 import lab_server  # noqa: E402
 
 from app.comparison import compare  # noqa: E402
+from app.engine.checks import CATALOG
 from app.engine.memory_sink import MemorySink  # noqa: E402
 from app.engine.runner import run_campaign  # noqa: E402
 from app.engine.scope import utcnow  # noqa: E402
@@ -69,11 +70,11 @@ def test_ai_decides_order_and_plan_is_recorded_before_execution(lab):
         return pick(available[-1]["test_id"])
 
     sink = MemorySink(approve=True)
-    c = run(lab, sink, llm=ScriptedLLM([choose_last] * 14))
+    c = run(lab, sink, llm=ScriptedLLM([choose_last] * len(CATALOG)))
     assert [m.test_id for m in c.moves][0] == "TLS-001"  # Pent/Recon prioriza a abertura
     assert c.moves[0].recommended_by == "Recon"
     assert c.moves[0].attack_tactic_id == "TA0043"
-    assert len(c.moves) == 14  # cobertura garantida: todos jogados
+    assert len(c.moves) == len(CATALOG)  # cobertura garantida: todos jogados
     assert all(m.plan and m.plan.hypothesis for m in c.moves)
     assert any(m.plan.source == "ai" for m in c.moves[1:])  # IA ainda ordena os checks sem agente
     planned = [e for e in sink.events if e.type is EventType.MOVE_PLANNED]
@@ -81,7 +82,7 @@ def test_ai_decides_order_and_plan_is_recorded_before_execution(lab):
 
 
 def test_ai_sees_observations_from_the_site(lab):
-    llm = ScriptedLLM([lambda p: pick(json.loads(p)["available_tests"][0]["test_id"])] * 14)
+    llm = ScriptedLLM([lambda p: pick(json.loads(p)["available_tests"][0]["test_id"])] * len(CATALOG))
     run(lab, llm=llm)
     first = json.loads(llm.prompts[0][1])
     assert first["target"]["observed"]["reachable"] is True
@@ -95,7 +96,7 @@ def test_referee_rejects_out_of_list_choice_and_falls_back(lab):
     assert c.moves[0].plan.source == "rules"
     assert len(llm.prompts) == 2  # apos 2 falhas seguidas a IA e desligada nesta partida
     assert all(m.plan.source == "rules" for m in c.moves)
-    assert len(c.moves) == 14
+    assert len(c.moves) == len(CATALOG)
 
 
 def test_without_llm_rules_plan_everything(lab):

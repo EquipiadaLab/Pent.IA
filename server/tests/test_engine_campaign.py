@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "devtools"))
 import lab_server  # noqa: E402
 
+from app.engine.checks import CATALOG
 from app.engine.memory_sink import MemorySink  # noqa: E402
 from app.engine.runner import run_campaign  # noqa: E402
 from app.engine.scope import utcnow  # noqa: E402
@@ -80,7 +81,7 @@ def test_stop_preserves_partial_results(vulnerable):
     sink = MemorySink(approve=True, stop_after_events=12)
     c = run(vulnerable, sink)
     assert c.state is CampaignState.STOPPED
-    assert 0 < len(c.moves) < 14
+    assert 0 < len(c.moves) < len(CATALOG)
     assert sink.events[-1].type is EventType.CAMPAIGN_FINISHED
 
 
