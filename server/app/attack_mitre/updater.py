@@ -9,9 +9,11 @@ request da API -- o cache e lido do disco):
     cd server
     .venv/bin/python -m app.attack_mitre.updater
 
-Isso baixa ~55 MB uma unica vez e grava ``attack_cache.json``
-(poucos KB) na mesma pasta deste modulo. O JSON completo NAO e versionado
-(fora do escopo do .gitignore atual; ver nota no README).
+Isso baixa ~55 MB uma unica vez e grava ``attack_cache.json`` (~485 KB) na
+mesma pasta deste modulo. O cache resumido E versionado no git: assim o
+sistema funciona offline (clone, merge, demo) sem depender da internet do
+evento. So rode o updater quando quiser atualizar para uma nova versao do
+ATT&CK e commite o resultado.
 """
 
 from __future__ import annotations

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from app.agents.Recon.catalog import RECON_TECHNIQUES
 from app.agents.base_agent import BaseTacticAgent
+from app.attack_mitre.catalog import AttackCatalogUnavailable
 from app.schemas.agents_contract import TacticDecisionContext, TechniqueRecommendation
 
 
@@ -29,27 +30,30 @@ class ReconAgent(BaseTacticAgent):
         denied = set(context.denied_test_ids)
         recommendations: list[TechniqueRecommendation] = []
 
-        for candidate in RECON_TECHNIQUES:
-            if candidate.test_id not in available:
-                continue
-            if candidate.test_id in executed or candidate.test_id in denied:
-                continue
-            if candidate.request_cost > context.remaining_requests:
-                continue
-            if not candidate.applies(context):
-                continue
+        try:
+            for candidate in RECON_TECHNIQUES:
+                if candidate.test_id not in available:
+                    continue
+                if candidate.test_id in executed or candidate.test_id in denied:
+                    continue
+                if candidate.request_cost > context.remaining_requests:
+                    continue
+                if not candidate.applies(context):
+                    continue
 
-            recommendations.append(
-                TechniqueRecommendation(
-                    agent=self.name,
-                    test_id=candidate.test_id,
-                    attack=self.attack_reference(candidate.technique_id),
-                    rationale=candidate.rationale,
-                    priority=candidate.base_priority,
-                    request_cost=candidate.request_cost,
-                    risk=candidate.risk,
-                    expected_value=candidate.expected_value,
+                recommendations.append(
+                    TechniqueRecommendation(
+                        agent=self.name,
+                        test_id=candidate.test_id,
+                        attack=self.attack_reference(candidate.technique_id),
+                        rationale=candidate.rationale,
+                        priority=candidate.base_priority,
+                        request_cost=candidate.request_cost,
+                        risk=candidate.risk,
+                        expected_value=candidate.expected_value,
+                    )
                 )
-            )
+        except (AttackCatalogUnavailable, KeyError, OSError, ValueError):
+            return []
 
         return sorted(recommendations, key=lambda item: item.priority, reverse=True)

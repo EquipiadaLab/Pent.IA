@@ -127,11 +127,17 @@ Campos extras opcionais (aditivos):
   testes que falharam naquela partida (mesmo alvo). Erros: 404 (não existe), 422 (outro alvo),
   409 (nada a revalidar). A resposta mostra `config.only_tests`.
   Botão sugerido no relatório: **"Revanche: revalidar o que falhou"**.
+> **Alvo travado — não existe mais campo de URL no front.** O servidor roda com
+> `locked_target` ativo e **só testa o alvo autorizado** (o migbot). Não crie input
+> de "Site a testar": **não mande `origin`** (ou mande vazio). O servidor usa o alvo
+> travado sozinho. Se o front mandar qualquer outra URL, a resposta é **403**
+> (`"Alvo travado: este sistema so testa ..."`). Para exibir qual é o alvo, leia
+> `locked_target` em `GET /scope` e mostre fixo: *"Alvo: {locked_target}"*.
+
 **Corpo** (os campos ficam dentro de `config`):
 ```json
 {
   "config": {
-    "origin": "http://127.0.0.1:8080",
     "authorized_by": "Organizacao do hackathon",
     "authorized_at": "2026-11-12T15:00:00Z"
   }
@@ -140,7 +146,7 @@ Campos extras opcionais (aditivos):
 
 | Campo | Obrigatório | Comportamento na tela |
 |---|---|---|
-| `origin` | **não** | Input "Site a testar". **Com `locked_target` ativo (ver `/scope`), o servidor ignora o que o front manda e sempre usa o alvo travado** (outra URL → 403). Sem trava: vazio usa `DEFAULT_TARGET`; aceita qualquer URL pública (redes internas/privadas recusadas) |
+| `origin` | **não enviar** | **Sem campo de URL.** Alvo travado no servidor; mandar outra URL → 403. Apenas mostre `locked_target` (de `/scope`) como texto fixo |
 | `authorized_by` | sim | Input "Quem autorizou" (fica na auditoria — accountability) |
 | `authorized_at` | sim | **Não pedir ao usuário**: envie `new Date().toISOString()` |
 | `extra_origins` | não | Ex.: versão `http://` do site, para o teste de redirecionamento |
@@ -162,13 +168,12 @@ Campos extras opcionais (aditivos):
 ```
 Guarde o `id` e comece o polling (seção 3).
 
-**Alvo recusado:** por padrão o servidor está em **modo aberto** — aceita qualquer URL pública que o
-front enviar (o operador declara o alvo e assume a autorização). São recusados: URL inválida, host
-que não resolve, e **endereços internos/privados** (rede interna, `169.254.169.254` etc. — anti-SSRF).
-Também existe o **modo lista fixa** (`AUTHORIZED_TARGETS` no servidor): aí só os alvos da lista passam.
-Em qualquer recusa, a resposta ainda é **201**, mas a partida termina sem lances, com `state = "failed"`
-e os eventos `scope_blocked` → `campaign_finished` (`data.reason`). Mostre em vermelho: *"Alvo recusado:
-{reason}"*. Use `GET /scope` para saber o modo atual e o `default_target`.
+**Alvo recusado:** o servidor roda **travado** (`locked_target`), então só o alvo autorizado passa.
+Se o front mandar outra URL, vem **403** na hora (`"Alvo travado: este sistema so testa ..."`). Como
+o front **não manda URL**, isso não deve acontecer no uso normal — mas trate o 403 mostrando em
+vermelho: *"Alvo recusado: {detail}"*. Para saber qual é o alvo, use `GET /scope` → `locked_target`.
+(Os campos `accepts_any_target`/`default_target`/`authorized_targets` do `/scope` existem para outros
+modos de servidor; com a trava ligada, só `locked_target` importa para o front.)
 
 **Regras do servidor:** se o corpo trouxer `allowed_methods`, limites de velocidade etc., o
 servidor **ignora ou limita** esses valores (só GET/OPTIONS, no máximo 5 req/s). A resposta mostra
@@ -300,11 +305,11 @@ O que o **servidor** permite. Use na tela de configuração (item 2 do desafio).
 ```
 | Campo | Comportamento |
 |---|---|
-| `locked_target` | Se preenchido, o sistema **só testa esse endereço**. Esconda o campo de URL e mostre "Alvo: {locked_target}" fixo. Qualquer outra URL enviada dá **403** |
-| `accepts_any_target` | `true` = modo aberto: o input "Site a testar" é livre. `false` = travado ou lista fixa |
-| `default_target` | O que o servidor usa se o `origin` vier vazio. Mostre como placeholder do input |
-| `blocks_private_targets` | `true` = redes internas/privadas são sempre recusadas (anti-SSRF). Avise se o usuário digitar um IP interno |
-| `authorized_targets` | Só no modo lista fixa: os únicos alvos aceitos |
+| `locked_target` | **É o que importa para o front.** Vem preenchido: o sistema **só testa esse endereço**. **Não crie campo de URL**; mostre "Alvo: {locked_target}" fixo. Qualquer outra URL enviada dá **403** |
+| `accepts_any_target` | Virá `false` (travado). Os campos abaixo só valem para outros modos de servidor — **ignore com a trava ligada** |
+| `default_target` | Não usado pelo front com a trava ligada |
+| `blocks_private_targets` | `true` = redes internas/privadas são sempre recusadas (anti-SSRF). Informativo |
+| `authorized_targets` | Só no modo lista fixa (não é o caso): os únicos alvos aceitos |
 | `allowed_methods` / `blocked_profiles` | Texto fixo "Somente leitura (GET/OPTIONS) · Testes intrusivos bloqueados" |
 | `limits` | "Até 5 requisições/s · máximo 500 por partida" |
 | `preapproval` | Para execução automática: quais testes sensíveis rodam sem humano, quem autorizou e até quando. `active` = válidos agora |
@@ -519,6 +524,23 @@ Exemplo real:
 | `reproduce` | Lista de comandos `curl` — bloco de código com botão copiar ("Como reproduzir") |
 | `ai_review` | `approved` → mostrar `ai_explanation` com selo "revisado pelo juiz". `rejected` → `ai_explanation` vem `null`; opcionalmente mostre "comentário da IA reprovado" + `issues` |
 
+#### Quem recomendou o lance + MITRE ATT&CK (no `Move`)
+Cada lance pode trazer qual agente especialista o recomendou e para qual tática/técnica do [MITRE ATT&CK](https://attack.mitre.org/) ele mapeia. Campos **opcionais** — se `null`, não mostre o selo. Hoje preenchidos por `Recon` e `Discovery`; conforme a equipe liga mais agentes, os mesmos campos passam a trazer outras táticas, **sem mudar o contrato**.
+```json
+"recommended_by": "Recon",
+"attack_tactic_id": "TA0043",
+"attack_tactic_name": "Reconnaissance",
+"attack_technique_id": "T1595",
+"attack_technique_name": "Active Scanning",
+"attack_url": "https://attack.mitre.org/techniques/T1595"
+```
+| Campo | Comportamento |
+|---|---|
+| `recommended_by` | string \| null — nome do agente ("Recon", "Discovery"). Selo "Recomendado por: Recon" |
+| `attack_tactic_id` / `attack_tactic_name` | string \| null — tática ATT&CK (ex.: `TA0043` / `Reconnaissance`). Selo de tática |
+| `attack_technique_id` / `attack_technique_name` | string \| null — técnica (ex.: `T1595` / `Active Scanning`) |
+| `attack_url` | string \| null — link oficial do MITRE. Use no selo da técnica (abre em nova aba) |
+
 ### 4.3 `Evidence`
 ```json
 {
@@ -660,6 +682,10 @@ export interface Move {
   evidence: Evidence[]; explanation: string | null; ai_explanation: string | null; recommendation: string | null;
   plan: MovePlan | null; verdict: Verdict | null; impact: string | null; reproduce: string[];
   ai_review: { verdict: "approved" | "rejected"; issues: string[] } | null;
+  recommended_by: string | null;
+  attack_tactic_id: string | null; attack_tactic_name: string | null;
+  attack_technique_id: string | null; attack_technique_name: string | null;
+  attack_url: string | null;
   started_at: string | null; finished_at: string | null;
 }
 export type Verdict = "confirmed" | "discarded" | "inconclusive";
