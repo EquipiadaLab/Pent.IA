@@ -104,10 +104,14 @@ def test_no_secrets_in_events_or_audit(vulnerable):
         assert secret not in blob
 
 
-def test_only_get_and_options_were_sent(vulnerable):
+def test_only_get_options_and_login_post_were_sent(vulnerable):
+    """GET/OPTIONS para quase tudo; POST so e permitido em /rest/user/login
+    (CREDS-SQLI-LOGIN-001, excecao estreita documentada no ScopeGuard)."""
     sink = MemorySink(approve=True)
     run(vulnerable, sink)
-    assert {a.method for a in sink.audits} <= {"GET", "OPTIONS"}
+    methods = {a.method for a in sink.audits}
+    assert methods <= {"GET", "OPTIONS", "POST"}
+    assert all(a.url.endswith("/rest/user/login") for a in sink.audits if a.method == "POST")
 
 
 def test_window_in_the_past_refuses_to_run(vulnerable):

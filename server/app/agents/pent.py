@@ -13,6 +13,7 @@ nao concede permissao a si proprio. Sua saida e uma recomendacao de um
 from __future__ import annotations
 
 from app.agents.Collection.collection_agent import CollectionAgent
+from app.agents.CredentialAccess.credential_access_agent import CredentialAccessAgent
 from app.agents.Discovery.discovery_agent import DiscoveryAgent
 from app.agents.Execution.execution_agent import ExecutionAgent
 from app.agents.Impact.impact_agent import ImpactAgent
@@ -45,6 +46,7 @@ class Pent:
                 PrivilegeEscalationAgent(),
                 ExecutionAgent(),
                 ImpactAgent(),
+                CredentialAccessAgent(),
             ]
         )
 

@@ -62,6 +62,13 @@ class ScopeDecision:
     reason: str | None = None
 
 
+# Exceção estreita e documentada: o UNICO par (metodo, caminho exato) fora de
+# GET/OPTIONS que o Scope Guard pode autorizar, e so para o check de
+# Credential Access (CREDS-SQLI-LOGIN-001). Nao e uma liberacao geral de
+# metodos de escrita -- qualquer outra combinacao continua bloqueada.
+_EXTRA_METHOD_ALLOWLIST: frozenset[tuple[str, str]] = frozenset({("POST", "/rest/user/login")})
+
+
 class ScopeGuard:
     def __init__(self, config: CampaignConfig) -> None:
         self.config = config
@@ -108,8 +115,10 @@ class ScopeGuard:
             return ScopeDecision(False, "URL invalida")
         if parts.username or parts.password:
             return ScopeDecision(False, "URL com credenciais embutidas")
-        if method.upper() not in self._methods:
-            return ScopeDecision(False, f"metodo {method.upper()} nao permitido")
+        verb = method.upper()
+        is_login_exception = (verb, canonical_path(parts.path)) in _EXTRA_METHOD_ALLOWLIST
+        if verb not in self._methods and not is_login_exception:
+            return ScopeDecision(False, f"metodo {verb} nao permitido")
         if not self.origin_in_scope(url):
             return ScopeDecision(False, "origem fora do escopo autorizado")
         if profile not in self.config.allowed_profiles:

@@ -5,7 +5,7 @@ escolhe lances deste catalogo: nunca cria requisicoes novas.
 """
 
 from app.engine.checks import (
-    active, collection, cookies, execution, headers, impact, privesc, recon, transport,
+    active, collection, cookies, credential_access, execution, headers, impact, privesc, recon, transport,
 )
 from app.engine.checks.base import CheckSpec
 from app.models import Phase, Profile, Severity
@@ -141,6 +141,11 @@ CATALOG: list[CheckSpec] = [
           hyp="Endpoints de dados podem anunciar metodos destrutivos (PUT/DELETE/PATCH) a clientes anonimos.",
           exp="Endpoints de dados nao anunciam metodos destrutivos sem autenticacao/autorizacao.",
           imp="Metodos destrutivos ao alcance de quem nao deveria sao pre-condicao para manipulacao ou destruicao de dados."),
+    _spec("CREDS-SQLI-LOGIN-001", "Bypass de autenticacao via SQL Injection no login", P.ENDGAME, ACTIVE, H,
+          "WSTG-ATHN-02", "A05:2025", credential_access.sqli_login_bypass, approval=True,
+          hyp="O campo de email do login pode ser vulneravel a SQL Injection, permitindo autenticar sem credenciais validas.",
+          exp="O endpoint de login rejeita o payload de bypass e nao emite token para ele.",
+          imp="Bypass de autenticacao via SQLi permite assumir qualquer conta (inclusive admin) sem conhecer a senha."),
 ]
 
 CATALOG_BY_ID: dict[str, CheckSpec] = {c.test_id: c for c in CATALOG}
