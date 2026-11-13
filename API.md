@@ -130,6 +130,73 @@ confirmados e técnicas MITRE usadas) — **sem precisar agregar isso manualment
 Chame esse endpoint junto com `GET /campaigns/{id}/report`, quando a campanha terminar (ou a
 qualquer momento, para mostrar progresso parcial por agente).
 
+## 0C. CVEs e exploits conhecidos (NVD) — sugestão do mentor
+
+Correlaciona a(s) tecnologia(s) **realmente observada(s)** na campanha (cabeçalhos `Server`/
+`X-Powered-By`, capturados por `INFO-001`/Discovery) com a base pública **NVD** (National
+Vulnerability Database, NIST). Nunca inventa CVE: se nenhum lance capturou um header de
+tecnologia identificável, ou a NVD não retornar nada para o termo, a lista vem vazia —
+**não existe "CVE genérico por categoria de achado"**.
+
+CDNs/proxies conhecidos (`cloudflare`, `akamai`, `fastly`, `varnish`...) são **ignorados** na
+correlação: eles descrevem a borda de rede, não o software de origem, e usá-los geraria CVEs
+de produtos completamente não relacionados ao alvo.
+
+### Novo endpoint: `GET /campaigns/{id}/cves`
+
+```json
+{
+  "campaign_id": "a9c3bfcb4db84ce5ac0a048cfc6870cb",
+  "matches": [
+    {
+      "search_term": "Express",
+      "move": 2,
+      "cves": [
+        {
+          "cve_id": "CVE-2024-29041",
+          "description": "Express.js minimal web framework... open redirect...",
+          "cvss_score": 6.1,
+          "cvss_severity": "MEDIUM",
+          "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N",
+          "cwe_ids": ["CWE-601"],
+          "published": "2024-03-25T21:15:08.527",
+          "nvd_url": "https://nvd.nist.gov/vuln/detail/CVE-2024-29041",
+          "exploits": [
+            { "url": "https://github.com/x/poc-express-open-redirect", "source": "github.com" }
+          ]
+        }
+      ],
+      "queried_at": "2026-11-13T04:19:37.19Z",
+      "source": "nvd",
+      "error": null
+    }
+  ]
+}
+```
+
+| Campo | Comportamento na tela |
+|---|---|
+| `matches[].search_term` | A tecnologia observada que gerou a busca (ex.: `"Express"`) — mostre como título da seção |
+| `matches[].move` | Lance que capturou esse header; link para o card correspondente |
+| `matches[].cves[]` | Lista ordenada por CVSS (maior primeiro). Vazio = NVD não tem CVE conhecido para esse termo |
+| `cve_id` | Selo clicável → `nvd_url` (abre `nvd.nist.gov`) |
+| `cvss_score` / `cvss_severity` | Selo colorido: `CRITICAL`/`HIGH` vermelho, `MEDIUM` amarelo, `LOW` cinza |
+| `cwe_ids` | Chips pequenos (ex.: `CWE-601`), opcional link para `cwe.mitre.org/data/definitions/{n}.html` |
+| `exploits[]` | **Se não vazio**, destaque com ícone de alerta: "⚠️ Exploit público conhecido" + link. Vem vazio na maioria dos CVEs — só aparece quando a própria NVD referencia um PoC/exploit |
+| `error` | Se preenchido, a consulta à NVD falhou (rede/timeout) — mostre "Não foi possível consultar a NVD agora" sem detalhes técnicos |
+
+Pode ser **lento na primeira chamada** (consulta externa, ~1–3 s por tecnologia observada);
+resultados ficam em cache no servidor por 1h. Mostre um spinner "Consultando base de
+vulnerabilidades (NVD)...".
+
+### No relatório exportado (Markdown/PDF)
+
+`GET /campaigns/{id}/report/export?format=md&include_cves=true` (ou `format=pdf`) inclui uma
+seção **"CVEs e exploits conhecidos (NVD)"** entre o resumo executivo e os achados, com o mesmo
+conteúdo do endpoint acima já formatado. Sem o parâmetro `include_cves=true`, o relatório sai
+igual a antes (mais rápido, sem chamada externa) — use esse parâmetro só quando o usuário clicar
+em algo como **"Gerar relatório com CVEs"**.
+
 **No card do lance**, mostre o plano antes do resultado:
 > **Hipótese:** {plan.hypothesis} · **Esperado:** {plan.expected_result} · **Por quê:** {plan.rationale}
 > Selo: `IA` se `plan.source = "ai"`, `Regras` se `"rules"`.
@@ -167,6 +234,7 @@ Os títulos dos testes passaram a ser neutros (ex.: "Exposicao do repositorio .g
 | 16 | GET | `/scope` | Regras de engajamento do servidor (alvos autorizados, limites, pré-aprovação) | 200 `ScopeResponse` |
 | 17 | GET | `/campaigns/{id}/status` | Progresso resumido da partida (barra de progresso, pendências) | 200 `CampaignStatusResponse` |
 | 18 | GET | `/campaigns/{id}/agents` | **Tela "Agentes"**: participação de Pent/Recon/Discovery/etc. (ver seção 0B) | 200 `AgentsParticipationResponse` |
+| 19 | GET | `/campaigns/{id}/cves` | **CVEs e exploits conhecidos** (NVD), correlacionados a tecnologia observada (ver seção 0C) | 200 `CvesResponse` |
 
 Não há endpoint separado de auditoria: ela vem em `GET /report` → `audit`.
 

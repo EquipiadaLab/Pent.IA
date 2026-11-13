@@ -419,6 +419,18 @@
               "default": "md",
               "title": "Format"
             }
+          },
+          {
+            "name": "include_cves",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Correlaciona tecnologias observadas com CVEs publicos (NVD). Pode ser lento.",
+              "default": false,
+              "title": "Include Cves"
+            },
+            "description": "Correlaciona tecnologias observadas com CVEs publicos (NVD). Pode ser lento."
           }
         ],
         "responses": {
@@ -630,6 +642,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgentsParticipationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/campaigns/{campaign_id}/cves": {
+      "get": {
+        "summary": "Campaign Cves",
+        "description": "CVEs publicos (NVD) correlacionados as tecnologias REALMENTE observadas na campanha.\n\nSo correlaciona o que um check ja capturou como evidencia (headers Server/\nX-Powered-By, mascarados pela allowlist). Sem evidencia de tecnologia, a\nlista de ``matches`` vem vazia -- nunca ha CVE \"generico\" por categoria de\nachado. Pode ser lento na primeira chamada (consulta externa a NVD); o\nresultado por termo fica em cache por 1h.",
+        "operationId": "campaign_cves_campaigns__campaign_id__cves_get",
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Campaign Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CvesResponse"
                 }
               }
             }
@@ -1400,6 +1452,172 @@
         ],
         "title": "CurrentMove"
       },
+      "CveMatch": {
+        "properties": {
+          "search_term": {
+            "type": "string",
+            "title": "Search Term",
+            "description": "Termo realmente observado que gerou a busca, ex.: 'nginx 1.14.0'."
+          },
+          "move": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move",
+            "description": "Lance que originou o termo, se houver."
+          },
+          "cves": {
+            "items": {
+              "$ref": "#/components/schemas/CveReference"
+            },
+            "type": "array",
+            "title": "Cves"
+          },
+          "queried_at": {
+            "type": "string",
+            "title": "Queried At"
+          },
+          "source": {
+            "type": "string",
+            "const": "nvd",
+            "title": "Source",
+            "default": "nvd"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Motivo da falha, se a consulta nao completou."
+          }
+        },
+        "type": "object",
+        "required": [
+          "search_term",
+          "queried_at"
+        ],
+        "title": "CveMatch",
+        "description": "Resultado da correlacao para UM termo de busca (ex.: 1 header observado)."
+      },
+      "CveReference": {
+        "properties": {
+          "cve_id": {
+            "type": "string",
+            "title": "Cve Id"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "cvss_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Score"
+          },
+          "cvss_severity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "LOW",
+                  "MEDIUM",
+                  "HIGH",
+                  "CRITICAL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Severity"
+          },
+          "cvss_vector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cvss Vector"
+          },
+          "cwe_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cwe Ids"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published"
+          },
+          "nvd_url": {
+            "type": "string",
+            "title": "Nvd Url"
+          },
+          "exploits": {
+            "items": {
+              "$ref": "#/components/schemas/ExploitReference"
+            },
+            "type": "array",
+            "title": "Exploits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cve_id",
+          "description",
+          "nvd_url"
+        ],
+        "title": "CveReference",
+        "description": "Um CVE correlacionado a um achado, com dados oficiais da NVD (nunca inventados)."
+      },
+      "CvesResponse": {
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "title": "Campaign Id"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/CveMatch"
+            },
+            "type": "array",
+            "title": "Matches"
+          }
+        },
+        "type": "object",
+        "required": [
+          "campaign_id",
+          "matches"
+        ],
+        "title": "CvesResponse"
+      },
       "Event": {
         "properties": {
           "seq": {
@@ -1571,6 +1789,32 @@
         ],
         "title": "ExecutiveSummary",
         "description": "Resumo executivo estruturado (JSON) para a tela."
+      },
+      "ExploitReference": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "description": "Dominio/origem da referencia, ex.: 'github.com'"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "title": "ExploitReference",
+        "description": "Um link de exploit/PoC, so incluido quando a propria NVD o rotula como tal\n(tag ``Exploit`` nas ``references`` do registro CVE)."
       },
       "GameReview": {
         "properties": {

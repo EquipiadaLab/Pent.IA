@@ -8,6 +8,7 @@ descrevem impacto em alto nivel, sem payloads ou instrucoes ofensivas.
 
 from __future__ import annotations
 
+from app.cve.models import CveMatch
 from app.models import GameReview, Move, Status, Verdict
 
 PDF_AVAILABLE: bool
@@ -103,7 +104,45 @@ def _finding_markdown(m: Move) -> list[str]:
     return lines
 
 
-def to_markdown(review: GameReview) -> str:
+def _cve_markdown(matches: list[CveMatch]) -> list[str]:
+    lines = ["## CVEs e exploits conhecidos (NVD)", ""]
+    with_results = [m for m in matches if m.cves]
+    if not matches:
+        lines.append(
+            "_Nenhuma tecnologia com versao identificavel foi observada nesta campanha; "
+            "nenhuma correlacao de CVE foi realizada._"
+        )
+        lines.append("")
+        return lines
+    if not with_results:
+        lines.append(
+            "_Tecnologias observadas foram consultadas na NVD, mas nenhum CVE publico foi encontrado "
+            "para os termos abaixo:_ " + ", ".join(f"`{m.search_term}`" for m in matches)
+        )
+        lines.append("")
+        return lines
+    for match in with_results:
+        origem = f" (lance {match.move})" if match.move else ""
+        lines.append(f"### Tecnologia observada: `{match.search_term}`{origem}")
+        lines.append("")
+        for cve in match.cves:
+            severity = f"{cve.cvss_severity} ({cve.cvss_score})" if cve.cvss_severity else "sem score CVSS"
+            lines.append(f"- **[{cve.cve_id}]({cve.nvd_url})** — {severity}")
+            lines.append(f"  {cve.description}")
+            if cve.cwe_ids:
+                lines.append(f"  CWE: {', '.join(cve.cwe_ids)}")
+            if cve.exploits:
+                for exp in cve.exploits:
+                    lines.append(f"  ⚠️ Exploit público conhecido: {exp.url}")
+        lines.append("")
+    for match in matches:
+        if match.error:
+            lines.append(f"_Consulta à NVD para `{match.search_term}` falhou ({match.error}); tente novamente mais tarde._")
+            lines.append("")
+    return lines
+
+
+def to_markdown(review: GameReview, cves: list[CveMatch] | None = None) -> str:
     c = review.campaign
     lines: list[str] = [f"# Game Review — {c.config.origin}", ""]
     lines.extend(
@@ -119,6 +158,9 @@ def to_markdown(review: GameReview) -> str:
     if c.score:
         lines.append(f"- **Accuracy:** {c.score.accuracy:.1f} | **Eval bar:** {c.score.eval_bar:+.1f}")
     lines.extend(["", "## Resumo executivo", "", review.executive_summary or "_(sem resumo)_", ""])
+
+    if cves is not None:
+        lines.extend(_cve_markdown(cves))
 
     findings = [m for m in c.moves if _is_reportable_finding(m)]
     lines.extend(["## Achados prioritarios e recomendacoes", ""])
@@ -193,7 +235,41 @@ def _add_finding_pdf(flow: list, m: Move, styles) -> None:
     flow.append(Spacer(1, 4 * mm))
 
 
-def to_pdf(review: GameReview) -> bytes:
+def _add_cve_pdf(flow: list, matches: list[CveMatch], styles) -> None:
+    flow.append(_paragraph("CVEs e exploits conhecidos (NVD)", styles["Heading1"]))
+    with_results = [m for m in matches if m.cves]
+    if not matches:
+        flow.append(_paragraph(
+            "Nenhuma tecnologia com versao identificavel foi observada nesta campanha; "
+            "nenhuma correlacao de CVE foi realizada.", styles["Normal"],
+        ))
+        flow.append(Spacer(1, 4 * mm))
+        return
+    if not with_results:
+        terms = ", ".join(m.search_term for m in matches)
+        flow.append(_paragraph(
+            f"Tecnologias observadas foram consultadas na NVD, mas nenhum CVE publico foi "
+            f"encontrado para: {terms}.", styles["Normal"],
+        ))
+        flow.append(Spacer(1, 4 * mm))
+        return
+    for match in with_results:
+        origem = f" (lance {match.move})" if match.move else ""
+        flow.append(_paragraph(f"Tecnologia observada: {match.search_term}{origem}", styles["Heading2"]))
+        for cve in match.cves:
+            severity = f"{cve.cvss_severity} ({cve.cvss_score})" if cve.cvss_severity else "sem score CVSS"
+            flow.append(_paragraph(f"{cve.cve_id} — {severity}", styles["Heading3"]))
+            flow.append(_paragraph(cve.description, styles["Normal"]))
+            if cve.cwe_ids:
+                flow.append(_paragraph(f"CWE: {', '.join(cve.cwe_ids)}", styles["Normal"]))
+            for exp in cve.exploits:
+                flow.append(_paragraph(f"Exploit publico conhecido: {exp.url}", styles["Normal"]))
+            flow.append(_paragraph(f"Referencia: {cve.nvd_url}", styles["Normal"]))
+            flow.append(Spacer(1, 2 * mm))
+    flow.append(Spacer(1, 4 * mm))
+
+
+def to_pdf(review: GameReview, cves: list[CveMatch] | None = None) -> bytes:
     """Renderiza o Game Review detalhado. Requer ``reportlab``."""
     if not PDF_AVAILABLE:  # pragma: no cover
         raise RuntimeError("Exportacao PDF indisponivel: instale 'reportlab'.")
@@ -225,6 +301,9 @@ def to_pdf(review: GameReview) -> bytes:
     flow.append(_paragraph("Resumo executivo", styles["Heading1"]))
     flow.append(_paragraph(review.executive_summary or "(sem resumo)", styles["Normal"]))
     flow.append(Spacer(1, 5 * mm))
+
+    if cves is not None:
+        _add_cve_pdf(flow, cves, styles)
 
     findings = [m for m in c.moves if _is_reportable_finding(m)]
     flow.append(_paragraph("Achados prioritarios e recomendacoes", styles["Heading1"]))

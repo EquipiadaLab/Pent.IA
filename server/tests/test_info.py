@@ -151,3 +151,23 @@ def cam_moves(client, cid):
 
 def test_campaign_agents_unknown_campaign_404s(client):
     assert client.get("/campaigns/nao-existe/agents").status_code == 404
+
+
+def test_campaign_cves_endpoint_without_technology_header_is_empty(client, lab):
+    """O lab_server nao define Server/X-Powered-By reconheciveis -> sem matches."""
+    cid = client.post(
+        "/campaigns",
+        json={"config": {"origin": lab, "authorized_by": "Org", "authorized_at": "2026-11-12T15:00:00Z",
+                         "max_requests_per_second": 5}},
+    ).json()["id"]
+    _finish_campaign(client, cid)
+
+    r = client.get(f"/campaigns/{cid}/cves")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["campaign_id"] == cid
+    assert isinstance(body["matches"], list)
+
+
+def test_campaign_cves_unknown_campaign_404s(client):
+    assert client.get("/campaigns/nao-existe/cves").status_code == 404

@@ -19,6 +19,7 @@ from app.api.timeline import router as timeline_router
 from app.api.ws import router as ws_router
 from app.api.context import AppContext
 from app.config import cors_origins, load_settings
+from app.cve.nvd_client import NvdClient
 from app.db import Database
 from app.interfaces import CampaignRunner
 from app.reporter import BedrockLLMClient, ReportBuilder, build_llm_client
@@ -62,6 +63,7 @@ def build_context() -> AppContext:
         runner=runner,
         report_builder=report_builder,
         using_real_engine=using_real,
+        nvd_client=NvdClient(api_key=settings.nvd_api_key),
     )
 
 

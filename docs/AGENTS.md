@@ -69,6 +69,20 @@ Notas:
   redirect (CWE-601) continua sendo uma opção válida no futuro, desde que
   mapeado pela técnica que realmente representa, nunca como C2.
 
+## CVEs e exploits conhecidos (NVD)
+
+Sugestão do mentor na avaliação do front-end. `app/cve/` correlaciona tecnologias
+**realmente observadas** (headers `Server`/`X-Powered-By` capturados por `INFO-001`/
+Discovery) com a base pública NVD (`services.nvd.nist.gov`), via `keywordSearch`. Nunca
+inventa CVE: sem header de tecnologia observável, ou sem resultado da NVD para o termo, a
+lista vem vazia. CDNs/proxies conhecidos (`cloudflare`, `akamai`, `fastly`...) são
+ignorados de propósito, pois descrevem a borda de rede, não o software de origem —
+correlacionar por eles geraria CVEs de produtos não relacionados ao alvo.
+
+Exposto em `GET /campaigns/{id}/cves` e, opcionalmente, em
+`GET /campaigns/{id}/report/export?include_cves=true` (seção "CVEs e exploits conhecidos"
+no Markdown/PDF). Ver `API.md`, seção 0C.
+
 ## Visibilidade da participação de cada agente (front-end)
 
 Cada `Move` já carrega `recommended_by`, `attack_tactic_id`, `attack_tactic_name`,

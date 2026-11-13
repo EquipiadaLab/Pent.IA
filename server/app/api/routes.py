@@ -31,6 +31,7 @@ from app.models import (
 )
 from app.authorization import default_target
 from app.comparison import failing
+from app.cve.correlation import correlate_campaign
 from app.engine.scope import normalize_origin
 from app.report import PDF_AVAILABLE, to_markdown, to_pdf
 from app.sink import ApprovalNotPending
@@ -234,12 +235,18 @@ async def game_review(
 async def export_review(
     campaign_id: str,
     format: str = Query("md", pattern="^(md|pdf)$"),
+    include_cves: bool = Query(
+        False, description="Correlaciona tecnologias observadas com CVEs publicos (NVD). Pode ser lento."
+    ),
     ctx: AppContext = Depends(get_ctx),
 ) -> Response:
     review = await _build_review(campaign_id, ctx)
+    cves = None
+    if include_cves and ctx.nvd_client is not None:
+        cves = await correlate_campaign(review.campaign, ctx.nvd_client)
     if format == "md":
         return Response(
-            content=to_markdown(review),
+            content=to_markdown(review, cves),
             media_type="text/markdown; charset=utf-8",
             headers={
                 "Content-Disposition": f'attachment; filename="game-review-{campaign_id}.md"'
@@ -251,7 +258,7 @@ async def export_review(
             detail="Exportacao PDF indisponivel: instale 'reportlab'. Use format=md.",
         )
     return Response(
-        content=to_pdf(review),
+        content=to_pdf(review, cves),
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="game-review-{campaign_id}.pdf"'

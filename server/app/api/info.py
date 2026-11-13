@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 from app.api.context import AppContext, get_ctx
 from app.api.routes import _MAX_RPS, _MAX_TIMEOUT_S, _MAX_TOTAL, _SAFE_METHODS, _SAFE_PROFILES
 from app.authorization import _block_private, accepts_any_target, authorized_origins, default_target
+from app.cve.correlation import correlate_campaign
+from app.cve.models import CveMatch
 from app.engine.checks import CATALOG
 from app.models import Approval, CampaignState, Phase, Profile, Score, Severity, Status
 from app.policy import preapproval
@@ -130,6 +132,11 @@ class AgentParticipation(BaseModel):
 class AgentsParticipationResponse(BaseModel):
     campaign_id: str
     agents: list[AgentParticipation]
+
+
+class CvesResponse(BaseModel):
+    campaign_id: str
+    matches: list[CveMatch]
 
 
 # ------------------------------------------------------------------ /status
@@ -318,3 +325,23 @@ async def campaign_agents(campaign_id: str, ctx: AppContext = Depends(get_ctx)) 
         for name in order
     ]
     return AgentsParticipationResponse(campaign_id=campaign_id, agents=agents)
+
+
+# ------------------------------------------------------------------ /campaigns/{id}/cves
+@router.get("/campaigns/{campaign_id}/cves", response_model=CvesResponse)
+async def campaign_cves(campaign_id: str, ctx: AppContext = Depends(get_ctx)) -> CvesResponse:
+    """CVEs publicos (NVD) correlacionados as tecnologias REALMENTE observadas na campanha.
+
+    So correlaciona o que um check ja capturou como evidencia (headers Server/
+    X-Powered-By, mascarados pela allowlist). Sem evidencia de tecnologia, a
+    lista de ``matches`` vem vazia -- nunca ha CVE "generico" por categoria de
+    achado. Pode ser lento na primeira chamada (consulta externa a NVD); o
+    resultado por termo fica em cache por 1h.
+    """
+    c = await ctx.db.get_campaign(campaign_id)
+    if c is None:
+        raise HTTPException(status_code=404, detail="Campanha nao encontrada.")
+    if ctx.nvd_client is None:
+        return CvesResponse(campaign_id=campaign_id, matches=[])
+    matches = await correlate_campaign(c, ctx.nvd_client)
+    return CvesResponse(campaign_id=campaign_id, matches=matches)

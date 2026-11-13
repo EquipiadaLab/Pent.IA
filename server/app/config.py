@@ -34,6 +34,9 @@ class Settings:
     block_intrusive: bool = True
     # Modelo do planejador (decide a cada lance: precisa ser rapido).
     planner_model_id: str | None = None
+    # Chave opcional do NVD (https://nvd.nist.gov/developers/request-an-api-key).
+    # Sem ela, o cliente NVD funciona igual, so com rate limit mais baixo (5/30s).
+    nvd_api_key: str | None = None
 
     @property
     def llm_enabled(self) -> bool:
@@ -68,6 +71,7 @@ def load_settings() -> Settings:
         bedrock_model_id=None if disabled else model_id,
         planner_model_id=None if disabled or model_id is None
         else (os.getenv("PLANNER_MODEL_ID") or DEFAULT_PLANNER_MODEL_ID),
+        nvd_api_key=os.getenv("NVD_API_KEY") or None,
     )
 
 
