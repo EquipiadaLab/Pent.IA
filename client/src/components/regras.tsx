@@ -43,7 +43,8 @@ function buildRules(scope: Scope | null): Rule[] {
     const timeout = scope?.limits.request_timeout_s;
     const methods = scope?.allowed_methods ?? ["GET", "OPTIONS"];
     const blocked = scope?.blocked_profiles ?? ["intrusive"];
-    const targets = scope?.authorized_targets ?? [];
+    const lockedTarget = scope?.locked_target ?? null;
+    const blocksPrivate = scope?.blocks_private_targets ?? true;
     const preapproval = scope?.preapproval;
 
     return [
@@ -64,26 +65,26 @@ function buildRules(scope: Scope | null): Rule[] {
             title: "Fronteira de escopo",
             icon: <Radar className="size-4" />,
             description:
-                "Toda origem é comparada no servidor com a allowlist da campanha, nunca apenas com a intenção do prompt.",
-            badge: scope?.local_only
+                "O alvo é travado no servidor: toda requisição é comparada com o alvo autorizado, nunca apenas com a intenção do prompt.",
+            badge: lockedTarget
                 ? {
-                      label: "Somente local",
+                      label: "Alvo travado",
                       className: "border-sky-400/30 bg-sky-400/10 text-sky-300",
                   }
                 : {
-                      label: `${targets.length} origem${targets.length === 1 ? "" : "s"}`,
+                      label: "Allowlist do servidor",
                       className: ENFORCED_BADGE,
                   },
             details: [
                 {
-                    label: "Modo",
-                    value: scope?.local_only
-                        ? "Somente 127.0.0.1 / localhost"
-                        : "Allowlist do servidor",
+                    label: "Alvo",
+                    value: lockedTarget ?? "definido pela allowlist do servidor",
                 },
                 {
-                    label: "Origens autorizadas",
-                    value: targets.length ? String(targets.length) : "nenhuma",
+                    label: "Redes privadas",
+                    value: blocksPrivate
+                        ? "bloqueadas (anti-SSRF)"
+                        : "permitidas",
                 },
             ],
         },
@@ -223,7 +224,7 @@ export default function Regras() {
                 </div>
             ) : (
                 <Accordion
-                    openMultiple
+                    multiple
                     defaultValue={["SAFE-001"]}
                     className="mt-4 border-white/10 bg-zinc-950/70"
                 >

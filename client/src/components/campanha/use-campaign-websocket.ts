@@ -45,6 +45,8 @@ const campaignMoveSchema = z.object({
   title: z.string(),
   phase: z.enum(["opening", "middlegame", "endgame"]),
   profile: z.string(),
+  wstg: z.string().nullish().transform((value) => value ?? null),
+  owasp_top10: z.string().nullish().transform((value) => value ?? null),
   approval: z.enum(["not_required", "pending", "approved", "denied"]),
   status: z.enum(["pass", "warning", "fail", "inconclusive"]).nullable(),
   severity: z.enum(["low", "medium", "high"]),
@@ -83,10 +85,25 @@ const campaignMoveSchema = z.object({
       stop_condition: z.string(),
       rationale: z.string().nullable(),
       source: z.enum(["ai", "rules"]),
+      planned_at: z.string().nullish().transform((value) => value ?? null),
     })
     .nullable(),
   verdict: z.enum(["confirmed", "discarded", "inconclusive"]).nullable(),
   impact: z.string().nullable(),
+  reproduce: z.array(z.string()).nullish().transform((value) => value ?? []),
+  ai_review: z
+    .object({
+      verdict: z.enum(["approved", "rejected"]),
+      issues: z.array(z.string()),
+    })
+    .nullish()
+    .transform((value) => value ?? null),
+  recommended_by: z.string().nullish().transform((value) => value ?? null),
+  attack_tactic_id: z.string().nullish().transform((value) => value ?? null),
+  attack_tactic_name: z.string().nullish().transform((value) => value ?? null),
+  attack_technique_id: z.string().nullish().transform((value) => value ?? null),
+  attack_technique_name: z.string().nullish().transform((value) => value ?? null),
+  attack_url: z.string().nullish().transform((value) => value ?? null),
   started_at: z.string().nullable(),
   finished_at: z.string().nullable(),
 });

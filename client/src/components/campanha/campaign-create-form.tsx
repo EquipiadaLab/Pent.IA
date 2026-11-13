@@ -1,6 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Play, Shield } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { Lock, Play, Shield } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "../ui/button";
@@ -11,39 +10,21 @@ import {
   CardTitle,
 } from "../ui/card";
 import { Input } from "../ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
 import { ApiErrorState } from "./api-error-state";
 
-function createCampaignFormSchema(targets: string[]) {
-  return z.object({
-    origin: z
-      .string()
-      .url("Informe uma URL válida.")
-      .refine(
-        (origin) => targets.includes(origin),
-        "Selecione uma origem presente na allowlist.",
-      ),
-    authorizedBy: z
-      .string()
-      .trim()
-      .min(1, "Informe quem autorizou a campanha.")
-      .max(120, "Use até 120 caracteres."),
-  });
-}
+const campaignFormSchema = z.object({
+  authorizedBy: z
+    .string()
+    .trim()
+    .min(1, "Informe quem autorizou a campanha.")
+    .max(120, "Use até 120 caracteres."),
+});
 
-export type CampaignFormValues = z.infer<
-  ReturnType<typeof createCampaignFormSchema>
->;
+export type CampaignFormValues = z.infer<typeof campaignFormSchema>;
 
 interface CampaignCreateFormProps {
-  targets: string[];
-  defaultOrigin: string;
+  /** Alvo travado no servidor (locked_target). O front não envia URL. */
+  lockedTarget: string | null;
   isSubmitting: boolean;
   apiError: string;
   scopeError: string;
@@ -52,37 +33,23 @@ interface CampaignCreateFormProps {
 }
 
 export function CampaignCreateForm({
-  targets,
-  defaultOrigin,
+  lockedTarget,
   isSubmitting,
   apiError,
   scopeError,
   onRetryScope,
   onSubmit,
 }: CampaignCreateFormProps) {
-  const campaignFormSchema = useMemo(
-    () => createCampaignFormSchema(targets),
-    [targets],
-  );
   const {
     control,
     handleSubmit,
-    getFieldState,
-    setValue,
     formState: { errors },
   } = useForm<CampaignFormValues>({
     resolver: zodResolver(campaignFormSchema),
     defaultValues: {
-      origin: defaultOrigin,
       authorizedBy: "",
     },
   });
-
-  useEffect(() => {
-    if (!getFieldState("origin").isDirty) {
-      setValue("origin", defaultOrigin);
-    }
-  }, [defaultOrigin, getFieldState, setValue]);
 
   return (
     <Card
@@ -99,7 +66,7 @@ export function CampaignCreateForm({
               Configurar campanha autorizada
             </CardTitle>
             <p className="mt-1 text-xs text-zinc-500">
-              Os alvos disponíveis vêm da allowlist retornada pelo servidor.
+              O alvo é travado no servidor. A tela não envia nenhuma URL.
             </p>
           </div>
         </div>
@@ -121,42 +88,16 @@ export function CampaignCreateForm({
           noValidate
         >
           <label className="grid content-start gap-2 text-xs text-zinc-400">
-            Site autorizado
-            <Controller
-              control={control}
-              name="origin"
-              render={({ field }) => (
-                <Select
-                  name={field.name}
-                  value={field.value || null}
-                  onValueChange={(value) => field.onChange(value ?? "")}
-                >
-                  <SelectTrigger
-                    ref={field.ref}
-                    onBlur={field.onBlur}
-                    aria-invalid={Boolean(errors.origin)}
-                  >
-                    <SelectValue placeholder="Selecione um alvo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {targets.map((target) => (
-                      <SelectItem key={target} value={target}>
-                        {target}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {errors.origin ? (
-              <span className="text-[11px] text-rose-300">
-                {errors.origin.message}
+            Alvo autorizado
+            <div className="flex h-10 items-center gap-2 rounded-md border border-white/10 bg-zinc-900/60 px-3">
+              <Lock className="size-3.5 shrink-0 text-emerald-400" />
+              <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-200">
+                {lockedTarget || "Definido pelo servidor"}
               </span>
-            ) : (
-              <span className="text-[11px] text-zinc-600">
-                Apenas origens listadas em authorized_targets podem ser selecionadas.
-              </span>
-            )}
+            </div>
+            <span className="text-[11px] text-zinc-600">
+              Alvo travado (locked_target). Só este endereço é testado.
+            </span>
           </label>
           <label className="grid content-start gap-2 text-xs text-zinc-400">
             Quem autorizou

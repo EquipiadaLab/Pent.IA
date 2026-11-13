@@ -22,14 +22,18 @@ import {
     type CampaignFormValues,
 } from "./campanha/campaign-create-form";
 import {
+    CampaignReport,
+    CampaignReportError,
+} from "./campanha/campaign-report";
+import {
     ACTIVE_STATES,
-    isLoopbackOrigin,
     stateLabel,
 } from "./campanha/helpers";
 import type {
     Campaign,
     CampaignStatus,
     CreateCampaignBody,
+    GameReview,
     Scope,
 } from "./campanha/types";
 import {
@@ -54,6 +58,7 @@ export default function Campanha() {
     const [pendingAction, setPendingAction] = useState("");
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
+    const [showReport, setShowReport] = useState(false);
     const [webSocketState, setWebSocketState] =
         useState<CampaignWebSocketState>({ status: "idle", message: "" });
 
@@ -83,12 +88,12 @@ export default function Campanha() {
     );
     const campaignId =
         selectedId || defaultCampaign?.id || campaigns[0]?.id || "";
-    const authorizedTargets = useMemo(
-        () => scope?.authorized_targets || [],
-        [scope],
-    );
-    const hasAuthorizedTargets = authorizedTargets.length > 0;
-    const origin = authorizedTargets[0] || "";
+    // Alvo travado no servidor: o front nunca envia URL (docs §2.2/§2.12).
+    const lockedTarget =
+        scope?.locked_target ||
+        scope?.default_target ||
+        scope?.authorized_targets[0] ||
+        null;
 
     const campaignQuery = useQuery({
         queryKey: ["campaign", campaignId],
@@ -124,6 +129,23 @@ export default function Campanha() {
     const campaignIsActive = Boolean(
         campaign && ACTIVE_STATES.includes(campaign.state),
     );
+    const campaignIsTerminal = Boolean(
+        campaign && !ACTIVE_STATES.includes(campaign.state),
+    );
+
+    // Game Review (item 7): a primeira chamada ao /report pode levar ~20-30 s (IA).
+    const reportQuery = useQuery({
+        queryKey: ["campaign-report", campaignId],
+        queryFn: async () =>
+            (
+                await api.get<GameReview>(
+                    `/campaigns/${encodeURIComponent(campaignId)}/report`,
+                    { timeout: 60_000 },
+                )
+            ).data,
+        enabled: Boolean(campaignId) && campaignIsTerminal && showReport,
+        staleTime: 5 * 60_000,
+    });
 
     useCampaignWebSocket({
         campaignId,
@@ -213,6 +235,14 @@ export default function Campanha() {
         });
     }, [queryClient, campaignId]);
 
+    // Após o /report, os lances ganham ai_explanation: propaga para o tabuleiro.
+    const reportCampaign = reportQuery.data?.campaign;
+    useEffect(() => {
+        if (reportCampaign) {
+            queryClient.setQueryData(["campaign", reportCampaign.id], reportCampaign);
+        }
+    }, [reportCampaign, queryClient]);
+
     useEffect(() => {
         const handleCreate = () => setShowCreate(true);
         window.addEventListener("campaign:refresh", refreshCampaignScreen);
@@ -223,23 +253,14 @@ export default function Campanha() {
         };
     }, [refreshCampaignScreen]);
 
-    const isLocalCampaign = Boolean(
-        campaign && isLoopbackOrigin(campaign.config.origin),
-    );
     const latestMove = campaign?.moves[campaign.moves.length - 1] || null;
 
     function createCampaign(values: CampaignFormValues) {
         setError("");
         setNotice("");
-        if (!authorizedTargets.includes(values.origin)) {
-            setError(
-                "Nenhum alvo autorizado. Configure AUTHORIZED_TARGETS no servidor antes de iniciar uma campanha.",
-            );
-            return;
-        }
+        // Alvo travado: não enviamos `origin`; o servidor usa o locked_target.
         createCampaignMutation.mutate({
             config: {
-                origin: values.origin,
                 authorized_by: values.authorizedBy,
                 authorized_at: new Date().toISOString(),
             },
@@ -275,10 +296,7 @@ export default function Campanha() {
     }
 
     function stopCampaign() {
-        if (!campaign || !isLocalCampaign) {
-            setError("A parada está disponível apenas para campanhas locais.");
-            return;
-        }
+        if (!campaign) return;
         if (
             !window.confirm(
                 "Parar esta campanha agora? Os resultados obtidos serão preservados.",
@@ -425,10 +443,9 @@ export default function Campanha() {
                             <LoaderCircle className="size-5 animate-spin" />
                         </CardContent>
                     </Card>
-                ) : hasAuthorizedTargets ? (
+                ) : (
                     <CampaignCreateForm
-                        targets={authorizedTargets}
-                        defaultOrigin={origin}
+                        lockedTarget={lockedTarget}
                         isSubmitting={isCreating}
                         apiError={
                             createCampaignMutation.error
@@ -441,56 +458,6 @@ export default function Campanha() {
                         onRetryScope={() => void scopeQuery.refetch()}
                         onSubmit={createCampaign}
                     />
-                ) : (
-                    <Card
-                        id="campaign-create"
-                        className="mt-5 border-amber-500/25 bg-amber-500/[0.04]"
-                    >
-                        <CardContent className="flex min-h-56 flex-col items-center justify-center gap-4 text-center">
-                            <span className="grid size-12 place-items-center rounded-2xl border border-amber-400/25 bg-amber-400/10 text-amber-200">
-                                <ShieldAlert className="size-6" />
-                            </span>
-                            <div className="space-y-1">
-                                <p className="text-sm font-semibold text-zinc-100">
-                                    Nenhum alvo autorizado
-                                </p>
-                                <p className="max-w-md text-xs leading-relaxed text-zinc-400">
-                                    O servidor não retornou nenhuma origem em{" "}
-                                    <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-zinc-300">
-                                        authorized_targets
-                                    </code>
-                                    . Configure{" "}
-                                    <code className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-zinc-300">
-                                        AUTHORIZED_TARGETS
-                                    </code>{" "}
-                                    no <code className="font-mono">.env</code> do servidor para
-                                    liberar a criação de campanhas.
-                                </p>
-                            </div>
-                            <div className="flex gap-2">
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={scopeQuery.isFetching}
-                                    className="border-white/10 bg-white/[0.03] text-zinc-300 hover:bg-white/10 hover:text-white"
-                                    onClick={() => void scopeQuery.refetch()}
-                                >
-                                    <RefreshCw
-                                        className={scopeQuery.isFetching ? "animate-spin" : ""}
-                                    />
-                                    Recarregar escopo
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="border-white/10 bg-transparent text-zinc-400 hover:bg-white/5"
-                                    onClick={() => setShowCreate(false)}
-                                >
-                                    Fechar
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
                 ))}
 
             {!campaign && !showCreate && (
@@ -564,7 +531,6 @@ export default function Campanha() {
                     onDecide={(moveNumber, decision) =>
                         void decideMove(moveNumber, decision)
                     }
-                    isLocal={isLocalCampaign}
                     isStopping={pendingAction === "stop"}
                     stopError={
                         stopCampaignMutation.error
@@ -579,7 +545,35 @@ export default function Campanha() {
                             ? getApiErrorMessage(downloadReportMutation.error)
                             : ""
                     }
+                    canOpenReport={campaignIsTerminal}
+                    onOpenReport={() => setShowReport(true)}
                 />
+            )}
+
+            {campaign && campaignIsTerminal && showReport && (
+                <>
+                    {reportQuery.isError ? (
+                        <CampaignReportError
+                            message={getApiErrorMessage(reportQuery.error)}
+                            onRetry={() => void reportQuery.refetch()}
+                        />
+                    ) : reportQuery.isPending || !reportQuery.data ? (
+                        <Card className="mt-3 border-white/10 bg-zinc-950/80">
+                            <CardContent className="flex min-h-40 flex-col items-center justify-center gap-3 text-zinc-500">
+                                <LoaderCircle className="size-5 animate-spin" />
+                                <p className="text-sm">
+                                    Analisando a partida... (a IA escreve o resumo e
+                                    comenta cada lance)
+                                </p>
+                            </CardContent>
+                        </Card>
+                    ) : (
+                        <CampaignReport
+                            report={reportQuery.data}
+                            onClose={() => setShowReport(false)}
+                        />
+                    )}
+                </>
             )}
         </main>
     );

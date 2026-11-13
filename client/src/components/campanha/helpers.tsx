@@ -27,6 +27,22 @@ export function isLoopbackOrigin(value: string) {
   }
 }
 
+/**
+ * Regra de segurança §6.3: nunca transformar strings vindas da API em href/src
+ * sem antes garantir que são http(s). Retorna a URL se for segura, senão null.
+ */
+export function safeHttpUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function formatTime(value: string | null | undefined) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("pt-BR", {

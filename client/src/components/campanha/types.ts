@@ -8,6 +8,8 @@ export type CampaignState =
 
 export type MoveStatus = "pass" | "warning" | "fail" | "inconclusive";
 
+export type Profile = "passive" | "active_light" | "intrusive";
+
 export type MoveGrade =
   | "brilliant"
   | "great"
@@ -19,6 +21,8 @@ export type MoveGrade =
   | "blunder"
   | "inconclusive";
 
+export type Verdict = "confirmed" | "discarded" | "inconclusive";
+
 export interface MovePlan {
   hypothesis: string;
   action: string;
@@ -26,6 +30,7 @@ export interface MovePlan {
   stop_condition: string;
   rationale: string | null;
   source: "ai" | "rules";
+  planned_at?: string | null;
 }
 
 export interface Evidence {
@@ -37,12 +42,19 @@ export interface Evidence {
   note: string | null;
 }
 
+export interface MoveReview {
+  verdict: "approved" | "rejected";
+  issues: string[];
+}
+
 export interface CampaignMove {
   move: number;
   test_id: string;
   title: string;
   phase: "opening" | "middlegame" | "endgame";
   profile: string;
+  wstg: string | null;
+  owasp_top10: string | null;
   approval: "not_required" | "pending" | "approved" | "denied";
   status: MoveStatus | null;
   severity: "low" | "medium" | "high";
@@ -53,8 +65,16 @@ export interface CampaignMove {
   ai_explanation: string | null;
   recommendation: string | null;
   plan: MovePlan | null;
-  verdict: "confirmed" | "discarded" | "inconclusive" | null;
+  verdict: Verdict | null;
   impact: string | null;
+  reproduce: string[];
+  ai_review: MoveReview | null;
+  recommended_by: string | null;
+  attack_tactic_id: string | null;
+  attack_tactic_name: string | null;
+  attack_technique_id: string | null;
+  attack_technique_name: string | null;
+  attack_url: string | null;
   started_at: string | null;
   finished_at: string | null;
 }
@@ -72,6 +92,7 @@ export interface Campaign {
     authorized_by: string;
     authorized_at: string;
     unattended?: boolean;
+    only_tests?: string[] | null;
   };
   state: CampaignState;
   created_at: string;
@@ -84,7 +105,14 @@ export interface CampaignStatus {
   id: string;
   state: CampaignState;
   origin: string;
+  unattended?: boolean;
   progress: { played: number; total: number; percent: number };
+  current_move?: {
+    move: number;
+    test_id: string;
+    title: string;
+    stage: "awaiting_approval" | "running";
+  } | null;
   pending_approvals: {
     move: number;
     test_id: string;
@@ -97,11 +125,14 @@ export interface CampaignStatus {
 }
 
 export interface Scope {
+  locked_target: string | null;
   authorized_targets: string[];
-  local_only: boolean;
+  accepts_any_target: boolean;
+  default_target: string | null;
+  blocks_private_targets: boolean;
   allowed_methods: string[];
-  allowed_profiles?: string[];
-  blocked_profiles?: string[];
+  allowed_profiles?: Profile[];
+  blocked_profiles?: Profile[];
   limits: {
     max_requests_per_second: number;
     max_total_requests: number;
@@ -115,18 +146,57 @@ export interface Scope {
   };
 }
 
+export interface CatalogTest {
+  test_id: string;
+  title: string;
+  phase: "opening" | "middlegame" | "endgame";
+  profile: Profile;
+  severity: "low" | "medium" | "high";
+  wstg: string;
+  owasp_top10: string;
+  needs_approval: boolean;
+  hypothesis: string;
+  expected: string;
+  impact: string;
+}
+
+export interface AuditEntry {
+  campaign_id?: string;
+  at: string;
+  method: string;
+  url: string;
+  allowed: boolean;
+  reason: string | null;
+  status_code: number | null;
+  response_sha256?: string | null;
+  actor: string;
+}
+
+export interface ExecutiveSummary {
+  headline: string;
+  risk_level: "critico" | "alto" | "medio" | "baixo";
+  plain_language: string;
+  top_risks: { move: number; title: string; why: string }[];
+  next_steps: string[];
+  source: "ai" | "rules";
+}
+
+export interface Comparison {
+  previous_campaign_id: string;
+  previous_accuracy: number | null;
+  accuracy_delta: number | null;
+  fixed: string[];
+  new: string[];
+  still_failing: string[];
+}
+
 export interface GameReview {
+  campaign?: Campaign;
   executive_summary: string | null;
   key_moments: { move: number; summary: string }[];
-  audit: {
-    at: string;
-    method: string;
-    url: string;
-    allowed: boolean;
-    reason: string | null;
-    status_code: number | null;
-    actor: string;
-  }[];
+  audit: AuditEntry[];
+  summary?: ExecutiveSummary | null;
+  comparison?: Comparison | null;
 }
 
 export interface TimelineEntry {
@@ -148,8 +218,9 @@ export interface TimelineEntry {
 
 export interface CreateCampaignBody {
   config: {
-    origin: string;
     authorized_by: string;
     authorized_at: string;
+    unattended?: boolean;
   };
+  revalidate_from?: string;
 }

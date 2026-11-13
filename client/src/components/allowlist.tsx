@@ -76,7 +76,9 @@ export default function Allowlist() {
                                     Origens permitidas
                                 </p>
                                 <CardTitle className="mt-2 text-sm text-zinc-100">
-                                    {scope?.authorized_targets.length ?? 0} origem(ns) autorizada(s)
+                                    {scope?.locked_target
+                                        ? "Alvo travado no servidor"
+                                        : `${scope?.authorized_targets.length ?? 0} origem(ns) autorizada(s)`}
                                 </CardTitle>
                             </div>
                             <span className="rounded border border-emerald-500/20 bg-emerald-500/[0.08] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
@@ -142,11 +144,19 @@ export default function Allowlist() {
                                 </p>
                             </div>
                         </CardHeader>
-                        <CardContent className="pt-0">
+                        <CardContent className="space-y-2 pt-0">
                             <div className="flex items-center justify-between border-t border-white/[0.07] pt-3 text-xs">
                                 <span className="text-zinc-500">Métodos permitidos</span>
                                 <span className="font-mono text-zinc-300">
                                     {scope?.allowed_methods.join(" · ") || "—"}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="text-zinc-500">Redes privadas</span>
+                                <span className="font-mono text-zinc-300">
+                                    {scope?.blocks_private_targets
+                                        ? "bloqueadas (anti-SSRF)"
+                                        : "permitidas"}
                                 </span>
                             </div>
                         </CardContent>

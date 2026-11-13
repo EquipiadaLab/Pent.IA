@@ -1,12 +1,15 @@
 import {
   ArrowRight,
   Bot,
+  Check,
   ChevronRight,
   Circle,
+  Copy,
   Crown,
   ExternalLink,
   FileDown,
   FileSearch,
+  FileText,
   Globe,
   LoaderCircle,
   LockKeyhole,
@@ -14,6 +17,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Square,
+  Terminal,
   Wrench,
   X,
 } from "lucide-react";
@@ -31,6 +35,7 @@ import {
   gradeTone,
   moveTone,
   phaseLabel,
+  safeHttpUrl,
   statusTag,
 } from "./helpers";
 import type { Campaign, CampaignMove } from "./types";
@@ -47,13 +52,14 @@ interface CampaignBoardProps {
   campaignError: string;
   actionError: string;
   onDecide: (moveNumber: number, decision: "approve" | "deny") => void;
-  isLocal: boolean;
   isStopping: boolean;
   stopError: string;
   onStop: () => void;
   onDownloadReport: () => void;
   isDownloadingReport: boolean;
   downloadError: string;
+  canOpenReport: boolean;
+  onOpenReport: () => void;
 }
 
 export function CampaignBoard({
@@ -64,13 +70,14 @@ export function CampaignBoard({
   campaignError,
   actionError,
   onDecide,
-  isLocal,
   isStopping,
   stopError,
   onStop,
   onDownloadReport,
   isDownloadingReport,
   downloadError,
+  canOpenReport,
+  onOpenReport,
 }: CampaignBoardProps) {
   const pendingMoves = campaign.moves.filter(
     (move) => move.approval === "pending",
@@ -91,7 +98,6 @@ export function CampaignBoard({
           error={campaignError}
           selectedMove={activeMove?.move ?? null}
           onSelectMove={setSelectedMove}
-          isLocal={isLocal}
           isStopping={isStopping}
           stopError={stopError}
           onStop={onStop}
@@ -118,6 +124,8 @@ export function CampaignBoard({
           onDownloadReport={onDownloadReport}
           isDownloadingReport={isDownloadingReport}
           downloadError={downloadError}
+          canOpenReport={canOpenReport}
+          onOpenReport={onOpenReport}
         />
       </div>
     </div>
@@ -181,7 +189,6 @@ function TimelineCard({
   error,
   selectedMove,
   onSelectMove,
-  isLocal,
   isStopping,
   stopError,
   onStop,
@@ -191,7 +198,6 @@ function TimelineCard({
   error: string;
   selectedMove: number | null;
   onSelectMove: (move: number) => void;
-  isLocal: boolean;
   isStopping: boolean;
   stopError: string;
   onStop: () => void;
@@ -217,9 +223,9 @@ function TimelineCard({
               <Button
                 variant="destructive"
                 size="xs"
-                disabled={isStopping || !isLocal}
+                disabled={isStopping}
                 onClick={onStop}
-                title={!isLocal ? "Disponível apenas para alvos locais" : undefined}
+                title="Parada de emergência"
               >
                 {isStopping ? (
                   <LoaderCircle className="animate-spin" />
@@ -336,21 +342,25 @@ function TimelineCard({
 }
 
 function UrlBar({ origin }: { origin: string }) {
+  // §6.3: só vira href se for http(s) de verdade.
+  const href = safeHttpUrl(origin);
   return (
     <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-2">
       <Globe className="size-4 shrink-0 text-zinc-500" />
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-300">
-        {origin}
+        {origin || "Alvo definido pelo servidor"}
       </span>
-      <a
-        href={origin}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
-      >
-        Abrir
-        <ExternalLink className="size-3" />
-      </a>
+      {href && (
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+        >
+          Abrir
+          <ExternalLink className="size-3" />
+        </a>
+      )}
     </div>
   );
 }
@@ -452,7 +462,7 @@ function ApprovalQueue({
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={!isLocal || Boolean(pendingAction)}
+                    disabled={Boolean(pendingAction)}
                     onClick={() => onDecide(head.move, "deny")}
                     className="border-white/10 bg-transparent text-zinc-300 hover:bg-white/5"
                   >
@@ -461,11 +471,11 @@ function ApprovalQueue({
                     ) : (
                       <X />
                     )}
-                    Cancelar
+                    Negar
                   </Button>
                   <Button
                     size="sm"
-                    disabled={!isLocal || Boolean(pendingAction)}
+                    disabled={Boolean(pendingAction)}
                     onClick={() => onDecide(head.move, "approve")}
                     className="bg-rose-600 text-white hover:bg-rose-500"
                   >
@@ -488,25 +498,58 @@ function ApprovalQueue({
 
 /* ----------------------------------------------------- Results panel (bottom-right) */
 
+const VERDICT_LABEL: Record<string, { label: string; className: string }> = {
+  confirmed: {
+    label: "Confirmado (2 observações)",
+    className: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+  },
+  discarded: {
+    label: "Descartado: não se reproduziu",
+    className: "border-white/15 bg-white/[0.04] text-zinc-400",
+  },
+  inconclusive: {
+    label: "Não reconfirmado",
+    className: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+  },
+};
+
 function ResultsPanel({
   move,
   findingsCount,
   onDownloadReport,
   isDownloadingReport,
   downloadError,
+  canOpenReport,
+  onOpenReport,
 }: {
   move: CampaignMove | null;
   findingsCount: number;
   onDownloadReport: () => void;
   isDownloadingReport: boolean;
   downloadError: string;
+  canOpenReport: boolean;
+  onOpenReport: () => void;
 }) {
   const [showEvidence, setShowEvidence] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [lastMove, setLastMove] = useState(move?.move ?? null);
   if ((move?.move ?? null) !== lastMove) {
     setLastMove(move?.move ?? null);
     setShowEvidence(false);
   }
+
+  const copyReproduce = (text: string) => {
+    void navigator.clipboard
+      ?.writeText(text)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => undefined);
+  };
+
+  const attackHref = move ? safeHttpUrl(move.attack_url) : null;
+  const verdict = move?.verdict ? VERDICT_LABEL[move.verdict] : null;
 
   return (
     <Card className="flex flex-1 flex-col border-rose-500/20 bg-gradient-to-b from-rose-950/15 to-zinc-950/80">
@@ -537,6 +580,53 @@ function ResultsPanel({
               {move.title}
             </h3>
 
+            {(verdict || move.recommended_by || move.attack_technique_id) && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {verdict && (
+                  <Badge
+                    variant="outline"
+                    className={`uppercase tracking-wider ${verdict.className}`}
+                  >
+                    {verdict.label}
+                  </Badge>
+                )}
+                {move.recommended_by && (
+                  <Badge
+                    variant="outline"
+                    className="border-sky-400/30 bg-sky-400/10 text-sky-300"
+                  >
+                    Recomendado por: {move.recommended_by}
+                  </Badge>
+                )}
+                {move.attack_technique_id &&
+                  (attackHref ? (
+                    <a
+                      href={attackHref}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="inline-flex"
+                    >
+                      <Badge
+                        variant="outline"
+                        className="border-violet-400/30 bg-violet-400/10 text-violet-300 hover:bg-violet-400/20"
+                      >
+                        ATT&CK {move.attack_technique_id}
+                        {move.attack_technique_name
+                          ? ` · ${move.attack_technique_name}`
+                          : ""}
+                      </Badge>
+                    </a>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="border-violet-400/30 bg-violet-400/10 text-violet-300"
+                    >
+                      ATT&CK {move.attack_technique_id}
+                    </Badge>
+                  ))}
+              </div>
+            )}
+
             <div className="mt-3 space-y-3">
               <div>
                 <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
@@ -558,7 +648,50 @@ function ResultsPanel({
                   {move.recommendation || "Nenhuma ação necessária até aqui."}
                 </p>
               </div>
+              {move.ai_explanation && (
+                <div>
+                  <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+                    <Bot className="size-3.5 text-sky-300" />
+                    Comentário do treinador (IA)
+                    {move.ai_review?.verdict === "approved" && (
+                      <span className="rounded bg-emerald-400/10 px-1 text-[9px] text-emerald-300">
+                        revisado pelo juiz
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-300">
+                    {move.ai_explanation}
+                  </p>
+                </div>
+              )}
             </div>
+
+            {move.reproduce.length > 0 && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between">
+                  <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+                    <Terminal className="size-3.5 text-zinc-400" />
+                    Como reproduzir
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Copiar comandos de reprodução"
+                    className="text-zinc-400 hover:bg-white/10 hover:text-white"
+                    onClick={() => copyReproduce(move.reproduce.join("\n"))}
+                  >
+                    {copied ? (
+                      <Check className="size-3.5" />
+                    ) : (
+                      <Copy className="size-3.5" />
+                    )}
+                  </Button>
+                </div>
+                <pre className="mt-1 overflow-x-auto rounded-lg border border-white/[0.07] bg-black/40 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-300">
+                  {move.reproduce.join("\n")}
+                </pre>
+              </div>
+            )}
 
             {move.evidence.length > 0 && (
               <div className="mt-3">
@@ -602,11 +735,18 @@ function ResultsPanel({
           </div>
         )}
 
-        <div className="mt-4 border-t border-white/[0.07] pt-3">
+        <div className="mt-4 space-y-2 border-t border-white/[0.07] pt-3">
           {downloadError && (
-            <div className="mb-2">
-              <ApiErrorState compact message={downloadError} />
-            </div>
+            <ApiErrorState compact message={downloadError} />
+          )}
+          {canOpenReport && (
+            <Button
+              onClick={onOpenReport}
+              className="w-full bg-rose-600 text-white hover:bg-rose-500"
+            >
+              <FileText />
+              Ver Game Review
+            </Button>
           )}
           <Button
             variant="outline"
