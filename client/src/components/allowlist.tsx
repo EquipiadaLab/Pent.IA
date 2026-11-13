@@ -19,11 +19,12 @@ export default function Allowlist() {
         queryFn: async () => (await api.get<Scope>("/scope")).data,
     });
 
+    const refetchScope = scopeQuery.refetch;
     useEffect(() => {
-        const handleRefresh = () => void scopeQuery.refetch();
+        const handleRefresh = () => void refetchScope();
         window.addEventListener("scope:refresh", handleRefresh);
         return () => window.removeEventListener("scope:refresh", handleRefresh);
-    }, [scopeQuery.refetch]);
+    }, [refetchScope]);
 
     const scope = scopeQuery.data;
     const isLoading = scopeQuery.isPending;

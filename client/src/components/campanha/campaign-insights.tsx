@@ -102,11 +102,6 @@ export function CampaignInsights({
           </span>
         </CardHeader>
         <CardContent className="space-y-3 pt-2">
-          <PolicyRow label="Alvo autorizado" value={campaign.config.origin} />
-          <PolicyRow
-            label="Autorizado por"
-            value={campaign.config.authorized_by || "—"}
-          />
           {scopeError ? (
             <ApiErrorState
               compact

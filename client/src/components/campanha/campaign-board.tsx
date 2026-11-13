@@ -1,30 +1,23 @@
 import {
-  Activity,
   ArrowRight,
-  Check,
-  CheckCheck,
+  Bot,
   ChevronRight,
   Circle,
+  Crown,
+  ExternalLink,
+  FileDown,
   FileSearch,
-  Info,
+  Globe,
   LoaderCircle,
   LockKeyhole,
   ScanSearch,
   ShieldAlert,
   ShieldCheck,
+  Square,
   Wrench,
   X,
-  Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "../ui/alert-dialog";
 import {
   Card,
   CardContent,
@@ -44,7 +37,6 @@ import type { Campaign, CampaignMove } from "./types";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { Switch } from "../ui/switch";
 import { ApiErrorState } from "./api-error-state";
 
 interface CampaignBoardProps {
@@ -55,6 +47,13 @@ interface CampaignBoardProps {
   campaignError: string;
   actionError: string;
   onDecide: (moveNumber: number, decision: "approve" | "deny") => void;
+  isLocal: boolean;
+  isStopping: boolean;
+  stopError: string;
+  onStop: () => void;
+  onDownloadReport: () => void;
+  isDownloadingReport: boolean;
+  downloadError: string;
 }
 
 export function CampaignBoard({
@@ -65,84 +64,199 @@ export function CampaignBoard({
   campaignError,
   actionError,
   onDecide,
+  isLocal,
+  isStopping,
+  stopError,
+  onStop,
+  onDownloadReport,
+  isDownloadingReport,
+  downloadError,
 }: CampaignBoardProps) {
-  const pendingMove =
-    campaign.moves.find((move) => move.approval === "pending") || null;
+  const pendingMoves = campaign.moves.filter(
+    (move) => move.approval === "pending",
+  );
 
   const [selectedMove, setSelectedMove] = useState<number | null>(null);
   const activeMove =
     campaign.moves.find((move) => move.move === selectedMove) ?? latestMove;
 
-  // Confirmação do usuário por lance. A automação fica sempre ativa enquanto a
-  // API de confirmação não existe (ver onboarding abaixo).
-  const autoConfirm = true;
-  const [confirmedMoves, setConfirmedMoves] = useState<Set<number>>(new Set());
-  const confirmMove = (moveNumber: number) =>
-    setConfirmedMoves((prev) => {
-      const next = new Set(prev);
-      next.add(moveNumber);
-      return next;
-    });
-  const isMoveConfirmed = (moveNumber: number) =>
-    autoConfirm || confirmedMoves.has(moveNumber);
-
   return (
-    <>
-      <div className="mt-3 grid gap-3 xl:grid-cols-[1.25fr_0.9fr]">
-        <Timeline
+    <div className="mt-4 grid gap-3 lg:h-[calc(100svh-15rem)] lg:min-h-0 lg:grid-cols-[76px_minmax(0,1.5fr)_minmax(0,1fr)]">
+      <AgentsRail />
+
+      <div className="flex min-h-0 min-w-0 flex-col gap-3">
+        <TimelineCard
           campaign={campaign}
           active={active}
           error={campaignError}
           selectedMove={activeMove?.move ?? null}
           onSelectMove={setSelectedMove}
-          isMoveConfirmed={isMoveConfirmed}
+          isLocal={isLocal}
+          isStopping={isStopping}
+          stopError={stopError}
+          onStop={onStop}
         />
-        <AnalysisCard
+        <UrlBar origin={campaign.config.origin} />
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-3">
+        <ApprovalQueue
+          pendingMoves={pendingMoves}
+          pendingAction={pendingAction}
+          actionError={actionError}
+          onDecide={onDecide}
+          onSelectMove={setSelectedMove}
+        />
+        <ResultsPanel
           move={activeMove}
-          autoConfirm={autoConfirm}
-          confirmed={activeMove ? isMoveConfirmed(activeMove.move) : false}
-          onConfirm={confirmMove}
+          findingsCount={
+            campaign.moves.filter(
+              (move) =>
+                move.status && move.status !== "pass" && move.approval !== "denied",
+            ).length
+          }
+          onDownloadReport={onDownloadReport}
+          isDownloadingReport={isDownloadingReport}
+          downloadError={downloadError}
         />
       </div>
-      <HumanApprovalDialog
-        move={pendingMove}
-        pendingAction={pendingAction}
-        actionError={actionError}
-        onDecide={onDecide}
-      />
-    </>
+    </div>
   );
 }
 
-function Timeline({
+/* ---------------------------------------------------------------- Agents rail */
+
+const PLACEHOLDER_AGENTS = [
+  "Reconhecimento",
+  "Exploração",
+  "Evidências",
+  "Relatório",
+  "Revisão",
+  "Escopo",
+];
+
+function AgentsRail() {
+  return (
+    <Card className="flex flex-row gap-3 border-white/10 bg-zinc-950/75 p-3 lg:flex-col lg:items-center lg:gap-2">
+      <button
+        type="button"
+        aria-current="true"
+        title="Agente Mestre Pent"
+        className="grid size-11 shrink-0 place-items-center rounded-full border-2 border-rose-500/60 bg-rose-500/15 text-rose-300 ring-2 ring-rose-500/20"
+      >
+        <Crown className="size-5" />
+      </button>
+      <span className="hidden text-center text-[9px] uppercase leading-tight tracking-wider text-zinc-500 lg:block">
+        Mestre Pent
+      </span>
+
+      <div className="mx-1 hidden h-px w-full bg-white/[0.07] lg:block" />
+
+      <div className="flex gap-2 lg:flex-col lg:items-center">
+        {PLACEHOLDER_AGENTS.map((label) => (
+          <button
+            key={label}
+            type="button"
+            disabled
+            title={`${label} · em breve`}
+            className="grid size-11 shrink-0 cursor-not-allowed place-items-center rounded-full border border-white/10 bg-white/[0.02] text-zinc-600"
+          >
+            <Bot className="size-5" />
+          </button>
+        ))}
+      </div>
+
+      <span className="mt-auto hidden text-center text-[9px] uppercase leading-tight tracking-wider text-zinc-600 lg:block">
+        Outros agentes · em breve
+      </span>
+    </Card>
+  );
+}
+
+/* ------------------------------------------------------------- Timeline (center) */
+
+function TimelineCard({
   campaign,
   active,
   error,
   selectedMove,
   onSelectMove,
-  isMoveConfirmed,
+  isLocal,
+  isStopping,
+  stopError,
+  onStop,
 }: {
   campaign: Campaign;
   active: boolean;
   error: string;
   selectedMove: number | null;
   onSelectMove: (move: number) => void;
-  isMoveConfirmed: (move: number) => boolean;
+  isLocal: boolean;
+  isStopping: boolean;
+  stopError: string;
+  onStop: () => void;
 }) {
+  const score = campaign.score;
+  const evalPercent = score
+    ? Math.min(100, Math.max(0, (score.eval_bar + 100) / 2))
+    : 50;
+
   return (
-    <Card className="border-white/10 bg-zinc-950/75">
-      <CardHeader className="flex grid-cols-[1fr_auto] items-center border-b border-white/[0.07] pb-4">
-        <div className="flex items-center gap-2">
-          <Activity className="size-4 text-rose-400" />
-          <CardTitle className="text-xs uppercase tracking-[0.16em] text-zinc-300">
+    <Card className="flex min-h-0 flex-1 flex-col border-white/10 bg-zinc-950/75">
+      <CardHeader className="gap-3 border-b border-white/[0.07] pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-zinc-300">
+            <span className="size-2 animate-pulse rounded-full bg-rose-500" />
             Linha do tempo · ao vivo
           </CardTitle>
+          <div className="flex items-center gap-2">
+            <span className="rounded-md border border-white/10 px-2 py-1 font-mono text-[10px] text-zinc-500">
+              {String(campaign.moves.length).padStart(2, "0")} lances
+            </span>
+            {active && (
+              <Button
+                variant="destructive"
+                size="xs"
+                disabled={isStopping || !isLocal}
+                onClick={onStop}
+                title={!isLocal ? "Disponível apenas para alvos locais" : undefined}
+              >
+                {isStopping ? (
+                  <LoaderCircle className="animate-spin" />
+                ) : (
+                  <Square />
+                )}
+                Parar
+              </Button>
+            )}
+          </div>
         </div>
-        <span className="rounded-md border border-white/10 px-2 py-1 font-mono text-[10px] text-zinc-500">
-          {String(campaign.moves.length).padStart(2, "0")} lances
-        </span>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between text-[10px] uppercase tracking-wider text-zinc-500">
+            <span>Avaliação da partida</span>
+            <span className="font-mono text-zinc-300">
+              {score ? `${score.accuracy.toFixed(1)} acc` : "—"} ·{" "}
+              {score
+                ? `${score.eval_bar > 0 ? "+" : ""}${score.eval_bar.toFixed(0)}`
+                : "—"}
+            </span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-rose-500 via-amber-300 to-emerald-400 transition-all duration-500"
+              style={{ width: `${evalPercent}%` }}
+            />
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="timeline-scrollbar max-h-145 overflow-y-auto pt-2">
+
+      <CardContent className="timeline-scrollbar min-h-0 flex-1 overflow-y-auto pt-2">
+        {stopError && (
+          <div className="mb-2">
+            <ApiErrorState compact message={stopError} />
+          </div>
+        )}
         {error && <ApiErrorState compact message={error} />}
         {campaign.moves.length ? (
           <ol className="divide-y divide-white/[0.06]">
@@ -151,20 +265,15 @@ function Timeline({
               .map((move) => {
                 const tag = statusTag(move);
                 const isSelected = move.move === selectedMove;
-                const confirmed =
-                  isMoveConfirmed(move.move) &&
-                  move.approval !== "pending" &&
-                  move.approval !== "denied";
                 return (
                   <li key={move.move} className="py-1">
                     <button
                       type="button"
                       aria-pressed={isSelected}
                       onClick={() => onSelectMove(move.move)}
-                      className={`w-full cursor-pointer rounded-xl border p-3 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 ${moveTone(move)} ${isSelected
-                        ? "ring-1 ring-rose-400/60 ring-offset-0"
-                        : ""
-                        }`}
+                      className={`w-full cursor-pointer rounded-xl border p-3 text-left transition-colors hover:border-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/40 ${moveTone(
+                        move,
+                      )} ${isSelected ? "ring-1 ring-rose-400/60" : ""}`}
                     >
                       <div className="flex items-start gap-3">
                         <div className="relative mt-0.5 grid size-6 shrink-0 place-items-center rounded-full border border-white/10 bg-zinc-950">
@@ -187,15 +296,6 @@ function Timeline({
                             <span>{phaseLabel(move.phase)}</span>
                             <span>·</span>
                             <span>{gradeLabel(move.grade)}</span>
-                            {confirmed && (
-                              <>
-                                <span>·</span>
-                                <span className="inline-flex items-center gap-1 text-emerald-400">
-                                  <CheckCheck className="size-3" />
-                                  Confirmado
-                                </span>
-                              </>
-                            )}
                           </div>
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -235,44 +335,191 @@ function Timeline({
   );
 }
 
-function AnalysisCard({
-  move,
-  autoConfirm,
-  confirmed,
-  onConfirm,
+function UrlBar({ origin }: { origin: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-zinc-900/80 px-3 py-2">
+      <Globe className="size-4 shrink-0 text-zinc-500" />
+      <span className="min-w-0 flex-1 truncate font-mono text-xs text-zinc-300">
+        {origin}
+      </span>
+      <a
+        href={origin}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] uppercase tracking-wider text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+      >
+        Abrir
+        <ExternalLink className="size-3" />
+      </a>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------- Approval queue (top-right) */
+
+function ApprovalQueue({
+  pendingMoves,
+  pendingAction,
+  actionError,
+  onDecide,
+  onSelectMove,
 }: {
-  move: CampaignMove | null;
-  autoConfirm: boolean;
-  confirmed: boolean;
-  onConfirm: (move: number) => void;
+  pendingMoves: CampaignMove[];
+  pendingAction: string;
+  actionError: string;
+  onDecide: CampaignBoardProps["onDecide"];
+  onSelectMove: (move: number) => void;
 }) {
-  const [showEvidence, setShowEvidence] = useState(false);
+  const notifiedMove = useRef<number | null>(null);
+  const head = pendingMoves[0] ?? null;
+  const headNumber = head?.move ?? null;
 
   useEffect(() => {
-    setShowEvidence(false);
-  }, [move?.move]);
-
-  const comment =
-    move?.ai_explanation ||
-    move?.explanation ||
-    (move?.approval === "pending"
-      ? "Este lance aguarda aprovação antes de ser executado."
-      : "O agente ainda está analisando este lance.");
+    if (headNumber === null) {
+      notifiedMove.current = null;
+      return;
+    }
+    if (notifiedMove.current === headNumber) return;
+    notifiedMove.current = headNumber;
+    playApprovalNotification();
+  }, [headNumber]);
 
   return (
-    <Card className="border-rose-500/20 bg-gradient-to-b from-rose-950/15 to-zinc-950/80">
+    <Card className="border-amber-400/20 bg-gradient-to-b from-amber-950/10 to-zinc-950/80">
       <CardHeader className="flex grid-cols-[1fr_auto] items-center border-b border-white/[0.07] pb-4">
-        <div className="flex items-center gap-2">
-          <ScanSearch className="size-4 text-rose-400" />
-          <CardTitle className="text-xs uppercase tracking-[0.16em] text-zinc-300">
-            Pente-fino · leitura do lance
-          </CardTitle>
-        </div>
-        <span className="font-mono text-[10px] text-zinc-500">
-          {move ? `LANCE ${String(move.move).padStart(2, "0")}` : "AGUARDANDO"}
-        </span>
+        <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-zinc-300">
+          <LockKeyhole className="size-4 text-amber-300" />
+          Ações do bot para aprovação
+        </CardTitle>
+        <Badge
+          variant="outline"
+          className="border-amber-400/30 bg-amber-400/10 uppercase tracking-wider text-amber-200"
+        >
+          {pendingMoves.length} na fila
+        </Badge>
       </CardHeader>
       <CardContent className="pt-4">
+        {pendingMoves.length === 0 ? (
+          <div className="flex min-h-28 flex-col items-center justify-center gap-2 text-center">
+            <ShieldCheck className="size-6 text-zinc-600" />
+            <p className="text-sm text-zinc-400">
+              Nenhuma ação aguardando aprovação.
+            </p>
+          </div>
+        ) : (
+          <>
+            <ul className="space-y-2">
+              {pendingMoves.map((move, index) => (
+                <li key={move.move}>
+                  <button
+                    type="button"
+                    onClick={() => onSelectMove(move.move)}
+                    className={`w-full rounded-lg border px-3 py-2 text-left transition-colors hover:border-white/20 ${index === 0
+                      ? "border-amber-400/40 bg-amber-400/5"
+                      : "border-white/10 bg-white/[0.02]"
+                      }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-zinc-200">
+                        {move.title}
+                      </span>
+                      <span className="shrink-0 font-mono text-[10px] text-zinc-500">
+                        {move.test_id}
+                      </span>
+                    </div>
+                    {move.plan?.hypothesis && (
+                      <p className="mt-1 line-clamp-1 text-xs text-zinc-500">
+                        {move.plan.hypothesis}
+                      </p>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {actionError && (
+              <div className="mt-3">
+                <ApiErrorState compact message={actionError} />
+              </div>
+            )}
+
+            {head && (
+              <div className="mt-4 flex items-center justify-between gap-2 border-t border-white/[0.07] pt-4">
+                <span className="truncate text-[11px] text-zinc-500">
+                  Decidindo lance {String(head.move).padStart(2, "0")}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!isLocal || Boolean(pendingAction)}
+                    onClick={() => onDecide(head.move, "deny")}
+                    className="border-white/10 bg-transparent text-zinc-300 hover:bg-white/5"
+                  >
+                    {pendingAction === `deny-${head.move}` ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <X />
+                    )}
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!isLocal || Boolean(pendingAction)}
+                    onClick={() => onDecide(head.move, "approve")}
+                    className="bg-rose-600 text-white hover:bg-rose-500"
+                  >
+                    {pendingAction === `approve-${head.move}` ? (
+                      <LoaderCircle className="animate-spin" />
+                    ) : (
+                      <ArrowRight />
+                    )}
+                    Avançar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ----------------------------------------------------- Results panel (bottom-right) */
+
+function ResultsPanel({
+  move,
+  findingsCount,
+  onDownloadReport,
+  isDownloadingReport,
+  downloadError,
+}: {
+  move: CampaignMove | null;
+  findingsCount: number;
+  onDownloadReport: () => void;
+  isDownloadingReport: boolean;
+  downloadError: string;
+}) {
+  const [showEvidence, setShowEvidence] = useState(false);
+  const [lastMove, setLastMove] = useState(move?.move ?? null);
+  if ((move?.move ?? null) !== lastMove) {
+    setLastMove(move?.move ?? null);
+    setShowEvidence(false);
+  }
+
+  return (
+    <Card className="flex flex-1 flex-col border-rose-500/20 bg-gradient-to-b from-rose-950/15 to-zinc-950/80">
+      <CardHeader className="flex grid-cols-[1fr_auto] items-center border-b border-white/[0.07] pb-4">
+        <CardTitle className="flex items-center gap-2 text-xs uppercase tracking-[0.16em] text-zinc-300">
+          <ScanSearch className="size-4 text-rose-400" />
+          Resultados e sugestões
+        </CardTitle>
+        <span className="font-mono text-[10px] text-zinc-500">
+          {findingsCount} achado{findingsCount === 1 ? "" : "s"}
+        </span>
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col pt-4">
         {move ? (
           <>
             <div className="flex items-center justify-between gap-3">
@@ -283,24 +530,20 @@ function AnalysisCard({
                 {gradeLabel(move.grade)}
               </Badge>
               <span className="font-mono text-[10px] text-zinc-500">
-                {move.test_id} · análise verificável
+                {move.test_id}
               </span>
             </div>
-
-            <h3 className="mt-3 text-lg font-semibold tracking-tight text-zinc-100">
+            <h3 className="mt-2 text-base font-semibold tracking-tight text-zinc-100">
               {move.title}
             </h3>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-              {comment}
-            </p>
 
-            <div className="mt-4 grid gap-4 border-t border-white/[0.07] pt-4 sm:grid-cols-2">
+            <div className="mt-3 space-y-3">
               <div>
                 <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
                   <ShieldAlert className="size-3.5 text-amber-300" />
                   Risco observado
                 </p>
-                <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                <p className="mt-1 text-xs leading-relaxed text-zinc-300">
                   {move.impact ||
                     move.explanation ||
                     "Sem risco relevante registrado para este lance."}
@@ -309,17 +552,16 @@ function AnalysisCard({
               <div>
                 <p className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
                   <Wrench className="size-3.5 text-rose-300" />
-                  Correção acionável
+                  Solução sugerida
                 </p>
-                <p className="mt-2 text-xs leading-relaxed text-rose-200/90">
-                  {move.recommendation ||
-                    "Nenhuma ação necessária até aqui."}
+                <p className="mt-1 text-xs leading-relaxed text-rose-200/90">
+                  {move.recommendation || "Nenhuma ação necessária até aqui."}
                 </p>
               </div>
             </div>
 
             {move.evidence.length > 0 && (
-              <div className="mt-4">
+              <div className="mt-3">
                 <Button
                   size="sm"
                   variant="outline"
@@ -327,37 +569,22 @@ function AnalysisCard({
                   onClick={() => setShowEvidence((value) => !value)}
                 >
                   <FileSearch />
-                  {showEvidence ? "Ocultar evidência bruta" : "Abrir evidência bruta"}
-                  <ArrowRight
-                    className={`transition-transform ${showEvidence ? "rotate-90" : ""}`}
-                  />
+                  {showEvidence ? "Ocultar evidência" : "Abrir evidência bruta"}
                 </Button>
                 {showEvidence && (
-                  <ul className="mt-3 space-y-2">
+                  <ul className="mt-2 space-y-2">
                     {move.evidence.map((item) => (
                       <li
                         key={item.id}
-                        className="rounded-lg border border-white/[0.07] bg-black/30 p-3 text-xs"
+                        className="rounded-lg border border-white/[0.07] bg-black/30 p-2.5 text-xs"
                       >
                         <p className="break-all font-mono text-zinc-300">
                           {item.request}
                         </p>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-zinc-500">
-                          {item.response_status !== null && (
-                            <span className="rounded bg-white/[0.05] px-1.5 py-0.5 font-mono">
-                              HTTP {item.response_status}
-                            </span>
-                          )}
-                          {item.response_sha256 && (
-                            <span className="font-mono">
-                              sha256: {item.response_sha256.slice(0, 12)}…
-                            </span>
-                          )}
-                        </div>
-                        {item.note && (
-                          <p className="mt-2 leading-relaxed text-zinc-500">
-                            {item.note}
-                          </p>
+                        {item.response_status !== null && (
+                          <span className="mt-1 inline-block rounded bg-white/[0.05] px-1.5 py-0.5 font-mono text-[10px] text-zinc-500">
+                            HTTP {item.response_status}
+                          </span>
                         )}
                       </li>
                     ))}
@@ -365,175 +592,38 @@ function AnalysisCard({
                 )}
               </div>
             )}
-
-            {move.approval !== "denied" && move.status && (
-              <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs text-emerald-300">
-                <ShieldCheck className="size-4 shrink-0" />
-                Lance executado com escopo preservado.
-              </div>
-            )}
-
-            <div className="mt-5 border-t border-white/[0.07] pt-4">
-              <div className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
-                <label
-                  htmlFor="auto-confirm"
-                  className="flex items-center gap-2.5"
-                >
-                  <Zap className="size-4 shrink-0 text-rose-400" />
-                  <span>
-                    <span className="block text-xs font-medium text-zinc-200">
-                      Confirmar lances automaticamente
-                    </span>
-                    <span className="block text-[10px] text-zinc-500">
-                      Dispensa a confirmação manual de cada lance.
-                    </span>
-                  </span>
-                </label>
-                <Switch
-                  id="auto-confirm"
-                  checked={autoConfirm}
-                  disabled
-                  aria-label="Confirmar lances automaticamente"
-                />
-              </div>
-              <p className="mt-2 flex items-start gap-1.5 text-[10px] leading-relaxed text-zinc-600">
-                <Info className="mt-px size-3 shrink-0" />
-                Sempre ativa por enquanto — a confirmação manual será liberada
-                quando a API de confirmação existir.
-              </p>
-
-              <Button
-                size="sm"
-                disabled={autoConfirm || confirmed}
-                onClick={() => onConfirm(move.move)}
-                className={`mt-3 w-full ${confirmed
-                  ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/10"
-                  : "bg-rose-600 text-white hover:bg-rose-500"
-                  }`}
-              >
-                {confirmed ? (
-                  <>
-                    <CheckCheck />
-                    {autoConfirm
-                      ? "Confirmado automaticamente"
-                      : "Lance confirmado"}
-                  </>
-                ) : (
-                  <>
-                    <Check />
-                    Confirmar lance
-                  </>
-                )}
-              </Button>
-            </div>
           </>
         ) : (
-          <div className="flex min-h-52 flex-col items-center justify-center text-center">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
             <ScanSearch className="size-6 text-zinc-600" />
-            <p className="mt-3 text-sm text-zinc-400">
-              Selecione um lance na linha do tempo.
-            </p>
-            <p className="mt-1 text-xs text-zinc-600">
-              A leitura pente-fino do lance aparecerá aqui.
+            <p className="text-sm text-zinc-400">
+              Selecione um lance para ver o resultado.
             </p>
           </div>
         )}
+
+        <div className="mt-4 border-t border-white/[0.07] pt-3">
+          {downloadError && (
+            <div className="mb-2">
+              <ApiErrorState compact message={downloadError} />
+            </div>
+          )}
+          <Button
+            variant="outline"
+            disabled={isDownloadingReport}
+            onClick={onDownloadReport}
+            className="w-full border-white/10 bg-white/[0.03] text-zinc-100 hover:bg-white/10"
+          >
+            {isDownloadingReport ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <FileDown />
+            )}
+            Baixar relatório detalhado
+          </Button>
+        </div>
       </CardContent>
     </Card>
-  );
-}
-
-function HumanApprovalDialog({
-  move,
-  pendingAction,
-  actionError,
-  onDecide,
-}: {
-  move: CampaignMove | null;
-  pendingAction: string;
-  actionError: string;
-  onDecide: CampaignBoardProps["onDecide"];
-}) {
-  const notifiedMove = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!move || move.approval !== "pending") {
-      notifiedMove.current = null;
-      return;
-    }
-
-    if (notifiedMove.current === move.move) return;
-    notifiedMove.current = move.move;
-    playApprovalNotification();
-  }, [move?.approval, move?.move]);
-
-  const isPending = Boolean(move);
-
-  return (
-    <AlertDialog open={isPending}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <div className="mb-1 grid size-10 place-items-center rounded-xl border border-amber-400/25 bg-amber-400/10 text-amber-200">
-            <LockKeyhole className="size-5" />
-          </div>
-          <AlertDialogTitle>Aprovação humana necessária</AlertDialogTitle>
-          <AlertDialogDescription>
-            {move?.plan?.hypothesis ||
-              "O agente solicitou autorização para executar este teste."}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        {move && (
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm">
-            <p className="font-medium text-zinc-100">
-              Lance {move.move} · {move.test_id}
-            </p>
-            <p className="mt-1 text-zinc-400">{move.title}</p>
-            {move.plan?.expected_result && (
-              <p className="mt-3 text-xs leading-relaxed text-zinc-500">
-                Resultado esperado: {move.plan.expected_result}
-              </p>
-            )}
-          </div>
-        )}
-
-        {actionError && <ApiErrorState compact message={actionError} />}
-
-        <AlertDialogFooter>
-          {move && (
-            <>
-              <Button
-                size="sm"
-                disabled={Boolean(pendingAction)}
-                onClick={() => onDecide(move.move, "deny")}
-                variant="outline"
-                className="border-white/10 bg-transparent text-zinc-300 hover:bg-white/5"
-              >
-                {pendingAction === `deny-${move.move}` ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <X />
-                )}
-                Negar
-              </Button>
-              <Button
-                size="sm"
-                disabled={Boolean(pendingAction)}
-                onClick={() => onDecide(move.move, "approve")}
-                className="bg-rose-600 text-white hover:bg-rose-500"
-              >
-                {pendingAction === `approve-${move.move}` ? (
-                  <LoaderCircle className="animate-spin" />
-                ) : (
-                  <Check />
-                )}
-                Aprovar lance
-              </Button>
-            </>
-          )}
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }
 

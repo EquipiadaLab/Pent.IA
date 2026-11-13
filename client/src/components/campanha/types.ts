@@ -100,9 +100,18 @@ export interface Scope {
   authorized_targets: string[];
   local_only: boolean;
   allowed_methods: string[];
+  allowed_profiles?: string[];
+  blocked_profiles?: string[];
   limits: {
     max_requests_per_second: number;
     max_total_requests: number;
+    request_timeout_s?: number;
+  };
+  preapproval?: {
+    tests: string[];
+    approved_by: string | null;
+    valid_until: string | null;
+    active: string[];
   };
 }
 
@@ -118,6 +127,23 @@ export interface GameReview {
     status_code: number | null;
     actor: string;
   }[];
+}
+
+export interface TimelineEntry {
+  at: string;
+  kind:
+    | "campaign"
+    | "decision"
+    | "approval_requested"
+    | "approval"
+    | "command"
+    | "blocked"
+    | "result"
+    | "score"
+    | "stop";
+  move: number | null;
+  summary: string;
+  details: Record<string, unknown>;
 }
 
 export interface CreateCampaignBody {

@@ -16,18 +16,11 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiErrorState } from "./campanha/api-error-state";
-import { CampaignActions } from "./campanha/campaign-actions";
 import { CampaignBoard } from "./campanha/campaign-board";
 import {
     CampaignCreateForm,
     type CampaignFormValues,
 } from "./campanha/campaign-create-form";
-import { CampaignInsights } from "./campanha/campaign-insights";
-import { CampaignOverview } from "./campanha/campaign-overview";
-import {
-    CampaignReport,
-    CampaignReportError,
-} from "./campanha/campaign-report";
 import {
     ACTIVE_STATES,
     isLoopbackOrigin,
@@ -37,7 +30,6 @@ import type {
     Campaign,
     CampaignStatus,
     CreateCampaignBody,
-    GameReview,
     Scope,
 } from "./campanha/types";
 import {
@@ -55,7 +47,6 @@ export default function Campanha() {
     const [pendingAction, setPendingAction] = useState("");
     const [error, setError] = useState("");
     const [notice, setNotice] = useState("");
-    const [reportOpenFor, setReportOpenFor] = useState("");
     const [webSocketState, setWebSocketState] =
         useState<CampaignWebSocketState>({ status: "idle", message: "" });
 
@@ -121,20 +112,8 @@ export default function Campanha() {
                 ? 1500
                 : false,
     });
-    const reportQuery = useQuery({
-        queryKey: ["campaign-report", campaignId],
-        queryFn: async () =>
-            (
-                await api.get<GameReview>(
-                    `/campaigns/${encodeURIComponent(campaignId)}/report`,
-                )
-            ).data,
-        enabled: false,
-    });
-
     const campaign = campaignQuery.data || null;
     const campaignStatus = statusQuery.data || null;
-    const report = reportQuery.data || null;
     const campaignIsActive = Boolean(
         campaign && ACTIVE_STATES.includes(campaign.state),
     );
@@ -240,8 +219,6 @@ export default function Campanha() {
     const isLocalCampaign = Boolean(
         campaign && isLoopbackOrigin(campaign.config.origin),
     );
-    const pendingMoves =
-        campaign?.moves.filter((move) => move.approval === "pending") || [];
     const latestMove = campaign?.moves[campaign.moves.length - 1] || null;
 
     function createCampaign(values: CampaignFormValues) {
@@ -310,14 +287,6 @@ export default function Campanha() {
         });
     }
 
-    function loadReport() {
-        if (!campaign) return;
-        setError("");
-        setNotice("");
-        setReportOpenFor(campaignId);
-        void reportQuery.refetch();
-    }
-
     function downloadReport() {
         if (!campaign) return;
         downloadReportMutation.mutate(campaign.id);
@@ -329,7 +298,7 @@ export default function Campanha() {
                 title="Campanha em execução"
                 description="Acompanhe a validação do escopo autorizado, lance a lance."
                 actions={
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                         {campaignIsActive && (
                             <span
                                 role="status"
@@ -564,83 +533,40 @@ export default function Campanha() {
             )}
 
             {campaign && (
-                <>
-                    <CampaignOverview
-                        campaign={campaign}
-                        status={campaignStatus}
-                        statusLoading={statusQuery.isFetching}
-                        statusError={
-                            statusQuery.error ? getApiErrorMessage(statusQuery.error) : ""
-                        }
-                        pendingCount={pendingMoves.length}
-                        active={campaignIsActive}
-                        onRetryStatus={() => void statusQuery.refetch()}
-                    />
-                    <CampaignBoard
-                        campaign={campaign}
-                        latestMove={latestMove}
-                        active={campaignIsActive}
-                        pendingAction={pendingAction}
-                        campaignError={
-                            campaignQuery.error
-                                ? getApiErrorMessage(campaignQuery.error)
-                                : ""
-                        }
-                        actionError={
-                            decideMoveMutation.error
-                                ? getApiErrorMessage(decideMoveMutation.error)
-                                : ""
-                        }
-                        onDecide={(moveNumber, decision) =>
-                            void decideMove(moveNumber, decision)
-                        }
-                    />
-                    <CampaignInsights
-                        campaign={campaign}
-                        scope={scope}
-                        scopeLoading={scopeQuery.isFetching}
-                        scopeError={
-                            scopeQuery.error ? getApiErrorMessage(scopeQuery.error) : ""
-                        }
-                        onRetryScope={() => void scopeQuery.refetch()}
-                    />
-                    {campaignIsActive || campaign.state !== "created" ? (
-                        <CampaignActions
-                            campaign={campaign}
-                            status={campaignStatus}
-                            active={campaignIsActive}
-                            pendingCount={pendingMoves.length}
-                            isLocal={isLocalCampaign}
-                            isStopping={pendingAction === "stop"}
-                            stopError={
-                                stopCampaignMutation.error
-                                    ? getApiErrorMessage(stopCampaignMutation.error)
-                                    : ""
-                            }
-                            exportError={
-                                downloadReportMutation.error
-                                    ? getApiErrorMessage(downloadReportMutation.error)
-                                    : ""
-                            }
-                            isLoadingReport={reportQuery.isFetching}
-                            onStop={() => void stopCampaign()}
-                            onViewReport={() => void loadReport()}
-                            onDownloadReport={() => void downloadReport()}
-                        />
-                    ) : null}
-                    {report && reportOpenFor === campaignId && (
-                        <CampaignReport
-                            report={report}
-                            onClose={() => setReportOpenFor("")}
-                        />
-                    )}
-                    {reportQuery.isError && (
-                        <CampaignReportError
-                            message={getApiErrorMessage(reportQuery.error)}
-                            onRetry={() => void loadReport()}
-                        />
-                    )}
-                </>
+                <CampaignBoard
+                    campaign={campaign}
+                    latestMove={latestMove}
+                    active={campaignIsActive}
+                    pendingAction={pendingAction}
+                    campaignError={
+                        campaignQuery.error
+                            ? getApiErrorMessage(campaignQuery.error)
+                            : ""
+                    }
+                    actionError={
+                        decideMoveMutation.error
+                            ? getApiErrorMessage(decideMoveMutation.error)
+                            : ""
+                    }
+                    onDecide={(moveNumber, decision) =>
+                        void decideMove(moveNumber, decision)
+                    }
+                    isLocal={isLocalCampaign}
+                    isStopping={pendingAction === "stop"}
+                    stopError={
+                        stopCampaignMutation.error
+                            ? getApiErrorMessage(stopCampaignMutation.error)
+                            : ""
+                    }
+                    onStop={() => void stopCampaign()}
+                    onDownloadReport={() => void downloadReport()}
+                    isDownloadingReport={downloadReportMutation.isPending}
+                    downloadError={
+                        downloadReportMutation.error
+                            ? getApiErrorMessage(downloadReportMutation.error)
+                            : ""
+                    }
+                />
             )}
         </main>
     );
