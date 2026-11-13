@@ -43,6 +43,18 @@ def _create(c, origin, **extra):
     return r.json()
 
 
+def test_locked_target_overrides_and_refuses_others(client, lab, monkeypatch):
+    monkeypatch.setenv("LOCKED_TARGET", lab)  # trava no alvo de treino (alcancavel)
+    # front manda outro endereco -> 403, mesmo sendo uma URL valida
+    r = client.post("/campaigns", json={"config": {"origin": "https://outro.com",
+                                                   "authorized_by": "x", "authorized_at": NOW}})
+    assert r.status_code == 403 and "travado" in r.json()["detail"].lower()
+    # front manda vazio -> usa o alvo travado
+    r2 = client.post("/campaigns", json={"config": {"authorized_by": "x", "authorized_at": NOW}})
+    assert r2.status_code == 201 and r2.json()["config"]["origin"] == lab
+    client.post(f"/campaigns/{r2.json()['id']}/stop")
+
+
 def _wait(c, cid, approve=True, timeout=30):
     end = time.time() + timeout
     while time.time() < end:
@@ -65,7 +77,8 @@ def test_approved_moves_keep_result_and_events_not_duplicated(client, lab):
         assert by[tid]["grade"] is not None, f"{tid} perdeu o resultado"
     ev = client.get(f"/campaigns/{cid}/events").json()
     counts = Counter(e["type"] for e in ev)
-    assert counts["approval_requested"] == 3 and counts["approval_resolved"] == 3
+    assert counts["approval_requested"] == len(cam["moves"])
+    assert counts["approval_resolved"] == len(cam["moves"])
     resolved = [e for e in ev if e["type"] == "approval_resolved"]
     assert all(e["data"]["move"] and e["data"]["approval"] == "approved" and e["data"]["actor"] for e in resolved)
     assert all(e["data"].get("move") for e in ev if e["type"] == "approval_requested")
@@ -89,7 +102,8 @@ def test_denied_and_stop(client, lab):
     cid = _create(client, lab)["id"]
     cam = _wait(client, cid, approve=False)
     denied = [m for m in cam["moves"] if m["approval"] == "denied"]
-    assert len(denied) == 3 and all(m["grade"] is None for m in denied)
+    assert len(denied) == len(cam["moves"])
+    assert all(m["grade"] is None for m in denied)
 
 
 def test_unauthorized_target_is_failed(client):

@@ -15,7 +15,14 @@ python devtools/lab_server.py                   # terminal 1: site de treino →
 python -m uvicorn app.main:app --port 8000      # terminal 2: API          → http://127.0.0.1:8000
 ```
 
-No front: `VITE_API_URL=http://127.0.0.1:8000` (única variável; **nenhuma chave da AWS no front**).
+No front: `VITE_API_URL` (única variável; **nenhuma chave da AWS no front**):
+- Local: `VITE_API_URL=http://127.0.0.1:8000`
+- Servidor na AWS (com HTTPS via Caddy): `VITE_API_URL=https://3-81-3-113.sslip.io`
+
+O WebSocket deriva daí trocando `http`→`ws` / `https`→`wss` (ex.: `wss://3-81-3-113.sslip.io/...`).
+Para o navegador conectar, a **origem da página do front** precisa estar liberada no servidor: o
+backend define `CORS_ORIGINS` (vale para CORS e WebSocket). Se o front for hospedado em um endereço
+qualquer, use `CORS_ORIGINS=*` no `.env` do servidor (libera qualquer origem; mais aberto, menos seguro).
 
 Gerar tipos TypeScript a partir do FastAPI (opcional):
 ```bash
@@ -120,11 +127,17 @@ Campos extras opcionais (aditivos):
   testes que falharam naquela partida (mesmo alvo). Erros: 404 (não existe), 422 (outro alvo),
   409 (nada a revalidar). A resposta mostra `config.only_tests`.
   Botão sugerido no relatório: **"Revanche: revalidar o que falhou"**.
+> **Alvo travado — não existe mais campo de URL no front.** O servidor roda com
+> `locked_target` ativo e **só testa o alvo autorizado** (o migbot). Não crie input
+> de "Site a testar": **não mande `origin`** (ou mande vazio). O servidor usa o alvo
+> travado sozinho. Se o front mandar qualquer outra URL, a resposta é **403**
+> (`"Alvo travado: este sistema so testa ..."`). Para exibir qual é o alvo, leia
+> `locked_target` em `GET /scope` e mostre fixo: *"Alvo: {locked_target}"*.
+
 **Corpo** (os campos ficam dentro de `config`):
 ```json
 {
   "config": {
-    "origin": "http://127.0.0.1:8080",
     "authorized_by": "Organizacao do hackathon",
     "authorized_at": "2026-11-12T15:00:00Z"
   }
@@ -133,8 +146,8 @@ Campos extras opcionais (aditivos):
 
 | Campo | Obrigatório | Comportamento na tela |
 |---|---|---|
-| `origin` | sim | Input "Site autorizado". Deve começar com `http://` ou `https://` |
-| `authorized_by` | sim | Input "Quem autorizou" |
+| `origin` | **não enviar** | **Sem campo de URL.** Alvo travado no servidor; mandar outra URL → 403. Apenas mostre `locked_target` (de `/scope`) como texto fixo |
+| `authorized_by` | sim | Input "Quem autorizou" (fica na auditoria — accountability) |
 | `authorized_at` | sim | **Não pedir ao usuário**: envie `new Date().toISOString()` |
 | `extra_origins` | não | Ex.: versão `http://` do site, para o teste de redirecionamento |
 | `included_paths` / `excluded_paths` | não | Avançado. Padrão: `["/"]` / `[]` |
@@ -155,9 +168,12 @@ Campos extras opcionais (aditivos):
 ```
 Guarde o `id` e comece o polling (seção 3).
 
-**Site não autorizado:** a resposta ainda é **201**, mas a partida termina sem lances, com
-`state = "failed"`, e chegam os eventos `scope_blocked` → `campaign_finished` com `data.reason`.
-Mostre isso em vermelho: *"Bloqueado: fora do escopo autorizado"*. É um ótimo momento da demo.
+**Alvo recusado:** o servidor roda **travado** (`locked_target`), então só o alvo autorizado passa.
+Se o front mandar outra URL, vem **403** na hora (`"Alvo travado: este sistema so testa ..."`). Como
+o front **não manda URL**, isso não deve acontecer no uso normal — mas trate o 403 mostrando em
+vermelho: *"Alvo recusado: {detail}"*. Para saber qual é o alvo, use `GET /scope` → `locked_target`.
+(Os campos `accepts_any_target`/`default_target`/`authorized_targets` do `/scope` existem para outros
+modos de servidor; com a trava ligada, só `locked_target` importa para o front.)
 
 **Regras do servidor:** se o corpo trouxer `allowed_methods`, limites de velocidade etc., o
 servidor **ignora ou limita** esses valores (só GET/OPTIONS, no máximo 5 req/s). A resposta mostra
@@ -275,8 +291,11 @@ Agrupe por `phase` (Abertura / Meio-jogo / Final) e marque com um cadeado os que
 O que o **servidor** permite. Use na tela de configuração (item 2 do desafio).
 ```json
 {
-  "authorized_targets": ["https://alvo-autorizado.com:443"],
-  "local_only": false,
+  "locked_target": "https://3.migbot.com.br",
+  "authorized_targets": ["https://3.migbot.com.br:443"],
+  "accepts_any_target": false,
+  "default_target": "https://3.migbot.com.br",
+  "blocks_private_targets": true,
   "allowed_methods": ["GET", "OPTIONS"],
   "allowed_profiles": ["active_light", "passive"],
   "blocked_profiles": ["intrusive"],
@@ -286,8 +305,11 @@ O que o **servidor** permite. Use na tela de configuração (item 2 do desafio).
 ```
 | Campo | Comportamento |
 |---|---|
-| `authorized_targets` | Mostre como **lista de escolha** do campo "Site autorizado" (evita digitar errado) |
-| `local_only` | `true` → só o site de treino local é aceito; mostre um aviso |
+| `locked_target` | **É o que importa para o front.** Vem preenchido: o sistema **só testa esse endereço**. **Não crie campo de URL**; mostre "Alvo: {locked_target}" fixo. Qualquer outra URL enviada dá **403** |
+| `accepts_any_target` | Virá `false` (travado). Os campos abaixo só valem para outros modos de servidor — **ignore com a trava ligada** |
+| `default_target` | Não usado pelo front com a trava ligada |
+| `blocks_private_targets` | `true` = redes internas/privadas são sempre recusadas (anti-SSRF). Informativo |
+| `authorized_targets` | Só no modo lista fixa (não é o caso): os únicos alvos aceitos |
 | `allowed_methods` / `blocked_profiles` | Texto fixo "Somente leitura (GET/OPTIONS) · Testes intrusivos bloqueados" |
 | `limits` | "Até 5 requisições/s · máximo 500 por partida" |
 | `preapproval` | Para execução automática: quais testes sensíveis rodam sem humano, quem autorizou e até quando. `active` = válidos agora |
@@ -502,6 +524,23 @@ Exemplo real:
 | `reproduce` | Lista de comandos `curl` — bloco de código com botão copiar ("Como reproduzir") |
 | `ai_review` | `approved` → mostrar `ai_explanation` com selo "revisado pelo juiz". `rejected` → `ai_explanation` vem `null`; opcionalmente mostre "comentário da IA reprovado" + `issues` |
 
+#### Quem recomendou o lance + MITRE ATT&CK (no `Move`)
+Cada lance pode trazer qual agente especialista o recomendou e para qual tática/técnica do [MITRE ATT&CK](https://attack.mitre.org/) ele mapeia. Campos **opcionais** — se `null`, não mostre o selo. Hoje preenchidos por `Recon` e `Discovery`; conforme a equipe liga mais agentes, os mesmos campos passam a trazer outras táticas, **sem mudar o contrato**.
+```json
+"recommended_by": "Recon",
+"attack_tactic_id": "TA0043",
+"attack_tactic_name": "Reconnaissance",
+"attack_technique_id": "T1595",
+"attack_technique_name": "Active Scanning",
+"attack_url": "https://attack.mitre.org/techniques/T1595"
+```
+| Campo | Comportamento |
+|---|---|
+| `recommended_by` | string \| null — nome do agente ("Recon", "Discovery"). Selo "Recomendado por: Recon" |
+| `attack_tactic_id` / `attack_tactic_name` | string \| null — tática ATT&CK (ex.: `TA0043` / `Reconnaissance`). Selo de tática |
+| `attack_technique_id` / `attack_technique_name` | string \| null — técnica (ex.: `T1595` / `Active Scanning`) |
+| `attack_url` | string \| null — link oficial do MITRE. Use no selo da técnica (abre em nova aba) |
+
 ### 4.3 `Evidence`
 ```json
 {
@@ -643,6 +682,10 @@ export interface Move {
   evidence: Evidence[]; explanation: string | null; ai_explanation: string | null; recommendation: string | null;
   plan: MovePlan | null; verdict: Verdict | null; impact: string | null; reproduce: string[];
   ai_review: { verdict: "approved" | "rejected"; issues: string[] } | null;
+  recommended_by: string | null;
+  attack_tactic_id: string | null; attack_tactic_name: string | null;
+  attack_technique_id: string | null; attack_technique_name: string | null;
+  attack_url: string | null;
   started_at: string | null; finished_at: string | null;
 }
 export type Verdict = "confirmed" | "discarded" | "inconclusive";
@@ -701,7 +744,8 @@ export interface CatalogTest {
   owasp_top10: string; needs_approval: boolean; hypothesis: string; expected: string; impact: string;
 }
 export interface ScopeResponse {
-  authorized_targets: string[]; local_only: boolean; allowed_methods: string[];
+  locked_target: string | null; authorized_targets: string[]; accepts_any_target: boolean; default_target: string | null;
+  blocks_private_targets: boolean; allowed_methods: string[];
   allowed_profiles: Profile[]; blocked_profiles: Profile[];
   limits: { max_requests_per_second: number; max_total_requests: number; request_timeout_s: number };
   preapproval: { tests: string[]; approved_by: string | null; valid_until: string | null; active: string[] };
@@ -714,8 +758,8 @@ export interface CampaignStatusResponse {
   score: Score | null; last_seq: number; created_at: string; finished_at: string | null; elapsed_s: number;
 }
 export interface CreateCampaignBody {
-  config: Pick<CampaignConfig, "origin" | "authorized_by" | "authorized_at">
-    & Partial<Pick<CampaignConfig, "extra_origins" | "included_paths" | "excluded_paths" | "window_start" | "window_end" | "unattended">>;
+  config: Pick<CampaignConfig, "authorized_by" | "authorized_at">
+    & Partial<Pick<CampaignConfig, "origin" | "extra_origins" | "included_paths" | "excluded_paths" | "window_start" | "window_end" | "unattended">>;
   revalidate_from?: string;
 }
 ```

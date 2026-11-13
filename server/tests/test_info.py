@@ -68,11 +68,20 @@ def test_scope(client, monkeypatch):
     monkeypatch.setenv("PREAPPROVED_BY", "Maria")
     monkeypatch.setenv("PREAPPROVED_UNTIL", (datetime.now(UTC) + timedelta(days=2)).date().isoformat())
     s = client.get("/scope").json()
-    assert s["authorized_targets"] == ["https://alvo.com:443"] and s["local_only"] is False
+    assert s["authorized_targets"] == ["https://alvo.com:443"] and s["accepts_any_target"] is False
+    assert s["default_target"] is None and s["blocks_private_targets"] is True
+    assert s["locked_target"] is None  # lista fixa, nao travado
+    monkeypatch.setenv("LOCKED_TARGET", "https://3.migbot.com.br")
+    locked = client.get("/scope").json()
+    assert locked["locked_target"] == "https://3.migbot.com.br"
+    assert locked["authorized_targets"] == ["https://3.migbot.com.br:443"]
+    assert locked["accepts_any_target"] is False
+    monkeypatch.delenv("LOCKED_TARGET")
     assert s["allowed_methods"] == ["GET", "OPTIONS"] and s["blocked_profiles"] == ["intrusive"]
     assert s["preapproval"]["active"] == ["FILE-001", "ERR-001"]
     monkeypatch.delenv("AUTHORIZED_TARGETS")
-    assert client.get("/scope").json()["local_only"] is True
+    open_scope = client.get("/scope").json()
+    assert open_scope["accepts_any_target"] is True and open_scope["default_target"]
 
 
 def test_campaign_status_progress_and_pending(client, lab):

@@ -20,7 +20,14 @@ from pydantic import BaseModel, Field
 
 from app.api.context import AppContext, get_ctx
 from app.api.routes import _MAX_RPS, _MAX_TIMEOUT_S, _MAX_TOTAL, _SAFE_METHODS, _SAFE_PROFILES
-from app.authorization import authorized_origins
+from app.authorization import (
+    _block_private,
+    accepts_any_target,
+    authorized_origins,
+    default_target,
+    locked_target,
+)
+from app.engine.scope import normalize_origin
 from app.engine.checks import CATALOG
 from app.models import Approval, CampaignState, Phase, Profile, Score, Severity
 from app.policy import preapproval
@@ -74,8 +81,11 @@ class PreapprovalInfo(BaseModel):
 
 
 class ScopeResponse(BaseModel):
+    locked_target: str | None = Field(description="Se preenchido, o sistema SO testa este alvo (trava forte)")
     authorized_targets: list[str]
-    local_only: bool = Field(description="True = sem AUTHORIZED_TARGETS; so 127.0.0.1/localhost")
+    accepts_any_target: bool = Field(description="True = modo aberto (qualquer URL publica); False = travado/lista")
+    default_target: str | None = Field(description="Alvo usado quando o front nao envia origin (modo aberto)")
+    blocks_private_targets: bool = Field(description="Rede interna/privada sempre bloqueada (anti-SSRF)")
     allowed_methods: list[str]
     allowed_profiles: list[Profile]
     blocked_profiles: list[Profile]
@@ -191,11 +201,16 @@ async def catalog() -> list[CatalogTest]:
 async def scope() -> ScopeResponse:
     import os
 
-    targets = sorted(authorized_origins())
+    open_mode = accepts_any_target()
+    locked = locked_target()
+    targets = [normalize_origin(locked) or locked] if locked else sorted(authorized_origins())
     tests = [t.strip() for t in os.getenv("PREAPPROVED_TESTS", "").split(",") if t.strip()]
     return ScopeResponse(
+        locked_target=locked,
         authorized_targets=targets,
-        local_only=not targets,
+        accepts_any_target=open_mode,
+        default_target=default_target() if open_mode else None,
+        blocks_private_targets=_block_private(),
         allowed_methods=list(_SAFE_METHODS),
         allowed_profiles=sorted(_SAFE_PROFILES, key=lambda p: p.value),
         blocked_profiles=[Profile.INTRUSIVE],

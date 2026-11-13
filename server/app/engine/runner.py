@@ -12,11 +12,14 @@ Assinatura exportada para a Plataforma (ver ``app.interfaces.CampaignRunner``):
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
+from app.agents.pent import Pent
 from app.authorization import explain_refusal, is_authorized
 from app.engine.checks.base import CheckContext, CheckOutcome, CheckSpec
 from app.engine.evaluator import compute_score, grade_for
 from app.engine.executor import Fetcher
-from app.engine.planner import Planner
+from app.engine.planner import Planner, rules_plan
 from app.engine.reproduce import reproduce_steps
 from app.engine.scope import ScopeGuard, utcnow
 from app.interfaces import EventSink, LLMClient
@@ -24,7 +27,7 @@ from app.models import (
     Approval, AuditEntry, Campaign, CampaignConfig, CampaignState, Confidence, Event, EventType,
     Grade, Move, MovePlan, Status, Verdict,
 )
-from app.policy import preapproval
+from app.schemas.agents_contract import TacticDecisionContext, TechniqueRecommendation
 from app.redact import sanitize_url
 
 
@@ -50,35 +53,46 @@ async def run_campaign(campaign_id: str, config: CampaignConfig, sink: EventSink
     fetcher = Fetcher(campaign_id, config, sink, guard)
     ctx = CheckContext(config, fetcher, guard)
     planner = Planner(config, llm)
+    pent = Pent()
     await _emit(sink, campaign_id, EventType.CAMPAIGN_STARTED, origin=sanitize_url(config.origin),
-                planner="ai" if planner.ai_active else "rules", unattended=config.unattended)
+                planner="ai" if planner.ai_active else "rules", unattended=False)
 
     try:
-        await ctx.base()  # abertura: observa o tabuleiro (GET / passivo) antes de planejar
+        # Nenhuma requisicao de abertura e feita aqui. A primeira observacao
+        # HTTP deve pertencer a um lance que o responsavel acabou de aprovar.
         number = 0
         while True:
             if await sink.should_stop():
                 campaign.state = CampaignState.STOPPED
                 break
-            choice = await planner.next_move(ctx, campaign.moves)
-            if choice is None:
-                campaign.state = CampaignState.FINISHED
-                break
-            spec, plan = choice
+
+            pent_choice = _pent_choice(campaign_id, config, campaign.moves, guard, planner, pent)
+            if pent_choice is not None:
+                spec, plan, recommendation = pent_choice
+            else:
+                # Fallback temporario para checks que ainda nao possuem um
+                # agente especialista. Continua sendo catalogo fechado e,
+                # abaixo, tambem exige aprovacao humana.
+                choice = await planner.next_move(ctx, campaign.moves)
+                if choice is None:
+                    campaign.state = CampaignState.FINISHED
+                    break
+                spec, plan = choice
+                recommendation = None
+
             number += 1
-            move = _new_move(number, spec, plan)
+            move = _new_move(number, spec, plan, recommendation)
             campaign.moves.append(move)
             ctx.move_no = number
 
-            if spec.needs_approval:
-                approved = await _approval(sink, campaign_id, config, move)
-                if not approved:
-                    if await sink.should_stop():
-                        campaign.state = CampaignState.STOPPED
-                        break
-                    continue  # negado: aparece no relatorio, fora do score
-            else:
-                await _emit(sink, campaign_id, EventType.MOVE_PLANNED, move)
+            # Regra da arquitetura multiagente: TODO lance, inclusive
+            # passivo, aguarda uma decisao humana antes de executar.
+            approved = await _approval(sink, campaign_id, move)
+            if not approved:
+                if await sink.should_stop():
+                    campaign.state = CampaignState.STOPPED
+                    break
+                continue  # negado: aparece no relatorio, fora do score
 
             reason = planner.skip_reason(spec, ctx)
             if reason:
@@ -116,24 +130,89 @@ def _refusal(config: CampaignConfig, guard: ScopeGuard) -> str | None:
     return None if window.allowed else window.reason
 
 
-def _new_move(number: int, spec: CheckSpec, plan: MovePlan) -> Move:
+def _pent_choice(
+    campaign_id: str,
+    config: CampaignConfig,
+    played: list[Move],
+    guard: ScopeGuard,
+    planner: Planner,
+    pent: Pent,
+) -> tuple[CheckSpec, MovePlan, TechniqueRecommendation] | None:
+    """Pede sugestoes ao Pent antes do fallback do planner existente.
+
+    Pent e Recon so recebem ids que ja pertencem ao catalogo fechado e que o
+    runner considera elegiveis. Mesmo assim, Pent valida o id novamente. Esta
+    funcao NAO faz rede e NAO cria permissao de execucao.
+    """
+    finished = {move.test_id for move in played}
+    denied = {move.test_id for move in played if move.approval is Approval.DENIED}
+    available = [
+        spec.test_id
+        for spec in planner.plan()
+        if spec.test_id not in finished and spec.profile in config.allowed_profiles
+    ]
+    context = TacticDecisionContext(
+        campaign_id=campaign_id,
+        available_test_ids=available,
+        executed_test_ids=[move.test_id for move in played if move.status is not None],
+        denied_test_ids=sorted(denied),
+        remaining_requests=max(0, config.max_total_requests - guard.requests_made),
+        observed_facts={"origin_scheme": urlsplit(config.origin).scheme.lower()},
+    )
+    decision = pent.choose_next(context)
+    recommendation = decision.selected
+    if recommendation is None:
+        return None
+
+    # Pent ja valida, mas o runner segue sendo o arbitro final.
+    spec = planner.suggest(recommendation.test_id)
+    if spec is None or spec.test_id not in available:
+        return None
+
+    plan = rules_plan(spec).model_copy(
+        update={
+            "rationale": (
+                f"Pent selecionou a recomendacao do agente {recommendation.agent}: "
+                f"{recommendation.rationale}"
+            )
+        }
+    )
+    return spec, plan, recommendation
+
+
+def _new_move(
+    number: int,
+    spec: CheckSpec,
+    plan: MovePlan,
+    recommendation: TechniqueRecommendation | None = None,
+) -> Move:
+    provenance = {}
+    if recommendation is not None:
+        attack = recommendation.attack
+        provenance = {
+            "recommended_by": recommendation.agent,
+            "attack_tactic_id": attack.tactic_id,
+            "attack_tactic_name": attack.tactic_name,
+            "attack_technique_id": attack.technique_id,
+            "attack_technique_name": attack.technique_name,
+            "attack_url": attack.url,
+        }
     return Move(
         move=number, test_id=spec.test_id, title=spec.title, phase=spec.phase, profile=spec.profile,
         wstg=spec.wstg, owasp_top10=spec.owasp, severity=spec.severity, impact=spec.impact, plan=plan,
-        approval=Approval.PENDING if spec.needs_approval else Approval.NOT_REQUIRED,
+        # Todo teste da nova arquitetura comeca pendente de decisao humana.
+        approval=Approval.PENDING,
+        **provenance,
     )
 
 
-async def _approval(sink: EventSink, cid: str, config: CampaignConfig, move: Move) -> bool:
-    """Humano decide; em execucao automatica, so a pre-aprovacao do SERVIDOR vale."""
-    if config.unattended:
-        policy = preapproval(move.test_id)
-        move.approval = Approval.APPROVED if policy.approved else Approval.DENIED
-        await _emit(sink, cid, EventType.MOVE_PLANNED, move)
-        await _emit(sink, cid, EventType.APPROVAL_RESOLVED, move, move=move.move,
-                    approval=move.approval.value, actor=policy.actor, reason=policy.reason)
-        return policy.approved
+async def _approval(sink: EventSink, cid: str, move: Move) -> bool:
+    """Aprovacao humana obrigatoria para TODO lance.
 
+    Mesmo que a campanha tenha sido marcada como ``unattended``, este fluxo
+    nao usa pre-aprovacao automatica: sem clique de aprovar, nao ha execucao.
+    A parada de emergencia vence qualquer aprovacao pendente.
+    """
     await _emit(sink, cid, EventType.MOVE_PLANNED, move)
     await _emit(sink, cid, EventType.APPROVAL_REQUESTED, move, move=move.move)
     decision = await sink.wait_approval(cid, move.model_copy(deep=True))

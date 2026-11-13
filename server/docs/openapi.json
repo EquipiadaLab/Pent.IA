@@ -822,7 +822,8 @@
           "origin": {
             "type": "string",
             "title": "Origin",
-            "description": "Origem exata: esquema + host + porta. Ex.: https://alvo.com"
+            "description": "Origem exata: esquema + host + porta. Ex.: https://alvo.com. Vazio = usa DEFAULT_TARGET do servidor.",
+            "default": ""
           },
           "extra_origins": {
             "items": {
@@ -934,7 +935,6 @@
         },
         "type": "object",
         "required": [
-          "origin",
           "authorized_by",
           "authorized_at"
         ],
@@ -1922,6 +1922,18 @@
       },
       "ScopeResponse": {
         "properties": {
+          "locked_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Target",
+            "description": "Se preenchido, o sistema SO testa este alvo (trava forte)"
+          },
           "authorized_targets": {
             "items": {
               "type": "string"
@@ -1929,10 +1941,27 @@
             "type": "array",
             "title": "Authorized Targets"
           },
-          "local_only": {
+          "accepts_any_target": {
             "type": "boolean",
-            "title": "Local Only",
-            "description": "True = sem AUTHORIZED_TARGETS; so 127.0.0.1/localhost"
+            "title": "Accepts Any Target",
+            "description": "True = modo aberto (qualquer URL publica); False = travado/lista"
+          },
+          "default_target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Target",
+            "description": "Alvo usado quando o front nao envia origin (modo aberto)"
+          },
+          "blocks_private_targets": {
+            "type": "boolean",
+            "title": "Blocks Private Targets",
+            "description": "Rede interna/privada sempre bloqueada (anti-SSRF)"
           },
           "allowed_methods": {
             "items": {
@@ -1968,8 +1997,11 @@
         },
         "type": "object",
         "required": [
+          "locked_target",
           "authorized_targets",
-          "local_only",
+          "accepts_any_target",
+          "default_target",
+          "blocks_private_targets",
           "allowed_methods",
           "allowed_profiles",
           "blocked_profiles",
