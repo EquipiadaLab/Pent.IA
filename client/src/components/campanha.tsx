@@ -39,6 +39,13 @@ import {
 import { DashboardHeader } from "./dashboard.header";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "./ui/select";
 
 export default function Campanha() {
     const queryClient = useQueryClient();
@@ -324,18 +331,24 @@ export default function Campanha() {
                             </span>
                         )}
                         {campaigns.length > 0 && (
-                            <select
-                                aria-label="Selecionar campanha"
-                                value={campaignId}
-                                onChange={(event) => setSelectedId(event.target.value)}
-                                className="h-9 max-w-48 rounded-lg border border-white/10 bg-zinc-900 px-3 text-xs text-zinc-300 outline-none focus:border-rose-500/60"
+                            <Select
+                                value={campaignId || null}
+                                onValueChange={(value) => setSelectedId(value ?? "")}
                             >
-                                {campaigns.map((item) => (
-                                    <option key={item.id} value={item.id}>
-                                        {item.config.origin} · {stateLabel(item.state)}
-                                    </option>
-                                ))}
-                            </select>
+                                <SelectTrigger
+                                    aria-label="Selecionar campanha"
+                                    className="h-9 w-48 max-w-48 rounded-lg text-xs"
+                                >
+                                    <SelectValue className="min-w-0 flex-1 truncate" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {campaigns.map((item) => (
+                                        <SelectItem key={item.id} value={item.id}>
+                                            {item.config.origin} · {stateLabel(item.state)}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         )}
                         <Button
                             aria-label="Atualizar campanhas"
